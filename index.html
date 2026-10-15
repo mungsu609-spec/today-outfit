@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>오늘 뭐 입지</title>
+<meta name="theme-color" content="#f6f3ee">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="오늘 뭐 입지">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root {
+  --bg: #f6f3ee; --card: #fff; --ink: #24211d; --sub: #7d766c; --line: #e8e2d8; --soft: #f1ece4;
+  --accent: #3d6fe0; --accent-soft: #e6edfc; --accent-ink: #fff;
+  --cold: #3d7be0; --good: #2e9b5e; --hot: #e2553b; --warn: #d98a1c;
+  --thumb: #f3efe8; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 14px rgba(0,0,0,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161514; --card: #22201e; --ink: #f1ede6; --sub: #a59e93; --line: #36322e; --soft: #2b2926;
+    --accent: #7ea2ff; --accent-soft: #283553; --accent-ink: #10172b;
+    --cold: #7ea8ff; --good: #5fcb8c; --hot: #ff8a70; --warn: #f2b45a;
+    --thumb: #ece7df; --shadow: none; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic", sans-serif; word-break: keep-all; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.wrap { max-width: 540px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 92px); }
+.view[hidden] { display: none; }
+h1 { font-size: 22px; margin: 4px 0 12px; letter-spacing: -.3px; }
+h2 { font-size: 17px; margin: 0; letter-spacing: -.2px; }
+.card { background: var(--card); border-radius: 18px; padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.muted { color: var(--sub); font-size: 14px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row.wrap-row { flex-wrap: wrap; }
+.spacer { flex: 1; }
+.btn { border: 0; border-radius: 12px; padding: 10px 14px; background: var(--soft); font-weight: 600; font-size: 15px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; color: var(--sub); padding: 6px 8px; }
+.btn.danger { background: transparent; color: var(--hot); }
+.btn.block { width: 100%; padding: 13px; }
+.btn:disabled { opacity: .5; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 2px; }
+.chips.scroll::-webkit-scrollbar { display: none; }
+.chips.scroll .chip { flex: none; }
+input[type=text], input[type=search], select, textarea { width: 100%; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 12px; font-size: 16px; }
+label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px; font-weight: 600; }
+
+/* 상단 */
+.top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.place { border: 0; background: none; padding: 4px 0; font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.place span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.daytabs { display: flex; background: var(--soft); border-radius: 12px; padding: 3px; margin-left: auto; flex: none; }
+.daytabs button { border: 0; background: none; padding: 6px 12px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--sub); }
+.daytabs button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
+
+/* 날씨 */
+.wx-main { display: flex; align-items: center; gap: 14px; }
+.wx-icon { font-size: 46px; line-height: 1; }
+.wx-feel { font-size: 34px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; }
+.wx-feel small { font-size: 15px; font-weight: 600; color: var(--sub); letter-spacing: 0; margin-left: 4px; }
+.hours { display: flex; gap: 4px; overflow-x: auto; margin: 14px -4px 0; padding: 0 4px; scrollbar-width: none; }
+.hours::-webkit-scrollbar { display: none; }
+.hour { flex: 1 0 44px; text-align: center; font-size: 12px; color: var(--sub); background: var(--soft); border-radius: 10px; padding: 6px 2px; }
+.hour b { display: block; color: var(--ink); font-size: 14px; }
+.hour i { font-style: normal; display: block; font-size: 15px; }
+.notes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.note { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--soft); }
+.note.rain { background: #e3eefc; color: #1f4f9c; }
+.note.wind, .note.gap { background: #fdf0dc; color: #8a5300; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .note.rain { background: #22324d; color: #b9d0ff; } :root:not([data-theme="light"]) .note.wind, :root:not([data-theme="light"]) .note.gap { background: #3d311d; color: #f2cf96; } }
+
+/* 코디 */
+.outfit-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.fitword { margin-left: auto; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--soft); white-space: nowrap; }
+.fitword.good { color: var(--good); } .fitword.cold, .fitword.cool { color: var(--cold); } .fitword.hot, .fitword.warm { color: var(--hot); }
+.pieces { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.piece { text-align: center; font-size: 12px; color: var(--sub); min-width: 0; }
+.piece .ph { aspect-ratio: 1; }
+.piece div.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.ph { background: var(--thumb); border-radius: 14px; display: grid; place-items: center; overflow: hidden; font-size: 34px; }
+.ph img { width: 88%; height: 88%; object-fit: contain; }
+.generic { background: var(--soft); border-radius: 14px; padding: 12px 14px; font-weight: 600; }
+.why { font-size: 13px; color: var(--sub); margin: 12px 0 0; }
+.actions { display: flex; gap: 6px; margin-top: 14px; }
+.actions .btn { flex: 1; padding: 10px 6px; font-size: 14px; white-space: nowrap; }
+
+/* 느낌 */
+.feels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.feel-btn { border: 2px solid transparent; background: var(--soft); border-radius: 14px; padding: 10px 4px; font-size: 14px; font-weight: 600; }
+.feel-btn span { display: block; font-size: 28px; }
+.feel-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+
+/* 옷장 */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin-top: 12px; }
+.item { border: 0; background: var(--card); border-radius: 16px; padding: 8px; text-align: left; box-shadow: var(--shadow); position: relative; min-width: 0; }
+.item .ph { aspect-ratio: 1; }
+.item .nm { font-size: 13px; font-weight: 600; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item .wm { font-size: 11px; color: var(--sub); letter-spacing: 1px; }
+.item.away { opacity: .5; }
+.badge { position: absolute; top: 12px; left: 12px; font-size: 11px; background: rgba(0,0,0,.6); color: #fff; padding: 1px 7px; border-radius: 999px; }
+.empty { text-align: center; color: var(--sub); padding: 36px 12px; }
+.empty b { display: block; font-size: 40px; margin-bottom: 6px; }
+.fab { position: fixed; right: max(16px, calc(50% - 254px)); bottom: calc(env(safe-area-inset-bottom) + 80px); border: 0; border-radius: 999px; padding: 14px 20px; background: var(--accent); color: var(--accent-ink); font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 5; }
+
+/* 기록 */
+.chart { width: 100%; height: auto; display: block; margin-top: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--sub); margin-top: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.legend i.line { width: 16px; height: 3px; border-radius: 2px; vertical-align: 3px; }
+.log { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; }
+.log:first-of-type { border-top: 0; }
+.log .em { font-size: 26px; }
+.log .dt { font-weight: 700; font-size: 15px; }
+.log .mini { display: flex; gap: 3px; margin-left: auto; }
+.log .mini .ph { width: 30px; height: 30px; border-radius: 8px; font-size: 16px; }
+
+/* 아래 탭 */
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line); display: flex; justify-content: center; padding-bottom: env(safe-area-inset-bottom); z-index: 10; }
+.tabbar button { flex: 1; max-width: 135px; border: 0; background: none; padding: 8px 0 7px; font-size: 11px; color: var(--sub); font-weight: 600; }
+.tabbar button span { display: block; font-size: 22px; line-height: 1.2; filter: grayscale(1); opacity: .6; }
+.tabbar button.on { color: var(--ink); }
+.tabbar button.on span { filter: none; opacity: 1; }
+
+/* 아래에서 올라오는 창 */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+.sheet-bg[hidden] { display: none; }
+.sheet { background: var(--bg); width: 100%; max-width: 540px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; border-radius: 22px 22px 0 0; padding: 8px 16px calc(env(safe-area-inset-bottom) + 20px); animation: up .22s ease-out; }
+@keyframes up { from { transform: translateY(40px); opacity: .4; } }
+.sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 4px auto 10px; }
+.sheet-head { display: flex; align-items: center; margin-bottom: 8px; }
+.sheet-head h2 { flex: 1; }
+.preview { width: 180px; height: 180px; margin: 0 auto; border-radius: 18px; background-color: #fff; background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%); background-size: 16px 16px; background-position: 0 0, 8px 8px; display: grid; place-items: center; overflow: hidden; font-size: 64px; }
+.preview img { max-width: 92%; max-height: 92%; }
+.ai-sugg { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.ai-sugg .chip small { color: inherit; opacity: .7; margin-left: 3px; }
+.ai-tag { font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 6px; margin-left: 6px; }
+.color-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.15); }
+.progress { height: 8px; background: var(--soft); border-radius: 4px; overflow: hidden; margin: 14px 0 8px; }
+.progress div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.step { padding: 6px 0; color: var(--sub); }
+.step.on { color: var(--ink); font-weight: 600; }
+.step.done { color: var(--good); }
+.check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 15px; }
+.check input { width: 20px; height: 20px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; margin-top: 8px; }
+.pick { border: 2px solid transparent; background: var(--card); border-radius: 14px; padding: 4px; font-size: 11px; color: var(--sub); min-width: 0; }
+.pick .ph { aspect-ratio: 1; font-size: 26px; }
+.pick div.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick.on { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.results button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 12px 4px; }
+.code { font: 600 18px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 1px; background: var(--soft); padding: 10px 12px; border-radius: 12px; word-break: break-all; }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px); transform: translateX(-50%); background: rgba(30,30,30,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 40; max-width: 90vw; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.toast.show { opacity: 1; }
+.skel { color: var(--sub); text-align: center; padding: 24px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- 홈 -->
+  <section class="view" id="homeView">
+    <div class="top">
+      <button class="place" id="btnPlace">📍 <span id="placeName">위치 찾는 중…</span></button>
+      <div class="daytabs" id="dayTabs"><button data-day="0" class="on">오늘</button><button data-day="1">내일</button></div>
+    </div>
+    <div class="card" id="wxCard"><div class="skel">날씨 불러오는 중…</div></div>
+    <div class="card" id="outfitCard"></div>
+    <div class="card" id="feelCard" hidden></div>
+  </section>
+
+  <!-- 옷장 -->
+  <section class="view" id="closetView" hidden>
+    <h1>내 옷장 <span class="muted" id="closetCount"></span></h1>
+    <div class="chips scroll" id="catChips"></div>
+    <div class="grid" id="closetGrid"></div>
+    <button class="fab" id="btnAdd">＋ 옷 추가</button>
+  </section>
+
+  <!-- 기록 -->
+  <section class="view" id="logView" hidden>
+    <h1>기록과 분석</h1>
+    <div class="card" id="analysisCard"></div>
+    <div class="card" id="logList"></div>
+  </section>
+
+  <!-- 설정 -->
+  <section class="view" id="setView" hidden>
+    <h1>설정</h1>
+    <div class="card">
+      <h2>위치</h2>
+      <p class="muted" id="setPlaceNow"></p>
+      <div class="row"><button class="btn" id="setGps">📍 현재 위치 쓰기</button><button class="btn" id="setCity">🔎 지역 고르기</button></div>
+    </div>
+    <div class="card">
+      <h2>외출 시간</h2>
+      <p class="muted">이 시간대 날씨로 옷을 골라요. 아침·저녁 쌀쌀함도 챙겨요.</p>
+      <div class="row"><select id="setStart"></select><span>~</span><select id="setEnd"></select></div>
+    </div>
+    <div class="card" id="setStore"></div>
+    <div class="card">
+      <h2>폰 안의 AI</h2>
+      <p class="muted">옷 사진의 배경을 지우고 종류·두께를 짐작하는 무료 AI예요. 처음 한 번만 파일(약 90MB)을 받아서 폰에 저장해요. 와이파이에서 미리 받아 두면 좋아요.</p>
+      <p class="muted" id="aiState"></p>
+      <div class="row"><button class="btn" id="aiPre">AI 미리 받기</button><button class="btn ghost" id="aiDel">AI 파일 지우기</button></div>
+    </div>
+    <p class="muted" style="text-align:center">오늘 뭐 입지 · <span id="appVer"></span><br>날씨: Open-Meteo</p>
+  </section>
+</div>
+
+<nav class="tabbar" id="tabbar">
+  <button data-go="home" class="on"><span>🌤️</span>오늘</button>
+  <button data-go="closet"><span>👕</span>옷장</button>
+  <button data-go="log"><span>📊</span>기록</button>
+  <button data-go="set"><span>⚙️</span>설정</button>
+</nav>
+
+<div class="sheet-bg" id="sheetBg" hidden><div class="sheet" id="sheet"></div></div>
+<input type="file" id="fileIn" accept="image/*" hidden>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script type="module">
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf } from "./catalog.js";
+import { fileToCanvas, cutout, onWhite, rotate, toStored, mainColor, COLORS } from "./photo.js";
+import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord } from "./model.js";
+
+const VERSION = "v1";
+const CFG = window.APP_CONFIG || {};
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+let toastTimer;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2400); }
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dateOf = (day) => { const d = new Date(); d.setDate(d.getDate() + day); return ymd(d); };
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+const md = (s) => { const d = new Date(s + "T00:00"); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`; };
+const r1 = (x) => Math.round(x);
+const CAT_EMOJI = { top: "👕", outer: "🧥", bottom: "👖", dress: "👗", shoes: "👟", acc: "🧣" };
+const emojiOf = (it) => CAT_EMOJI[typeOf(it.type).cat];
+const phHtml = (it) => it.photo ? `<img src="${it.photo}" alt="">` : emojiOf(it);
+
+// ---------- 설정 ----------
+const DEFAULT_PLACE = { mode: "gps", name: "부산 금정구", lat: 35.2462, lon: 129.0883 };
+let S = { place: DEFAULT_PLACE, start: 9, end: 21, ...ls.get("wx.set", {}) };
+const saveS = () => ls.set("wx.set", S);
+
+// ---------- 저장소 (Firebase 또는 이 폰) ----------
+function localStore(name) {
+  const key = "wx.data." + name;
+  let cb = () => {};
+  const all = () => ls.get(key, []);
+  const save = (list) => {
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch { toast("폰 저장 공간이 꽉 찼어요. Firebase를 연결해 주세요"); return; }
+    cb(list);
+  };
+  return {
+    subscribe(f) { cb = f; f(all()); },
+    set: async (id, data) => save([{ ...data, id }, ...all().filter((x) => x.id !== id)]),
+    remove: async (id) => save(all().filter((x) => x.id !== id)),
+  };
+}
+let fb = null;
+async function firebaseStore(code, name) {
+  const V = "10.12.2";
+  if (!fb) {
+    const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+    const fs = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
+    fb = { fs, db: fs.getFirestore(initializeApp(CFG.FIREBASE)) };
+  }
+  const { fs, db } = fb;
+  const col = fs.collection(db, "rooms", code, name);
+  return {
+    subscribe(f) {
+      fs.onSnapshot(col, (snap) => f(snap.docs.map((d) => ({ ...d.data(), id: d.id }))),
+        (err) => { console.error(err); toast("저장소를 불러오지 못했어요"); });
+    },
+    set: (id, data) => { const { id: _, ...rest } = data; return fs.setDoc(fs.doc(col, id), rest); },
+    remove: (id) => fs.deleteDoc(fs.doc(col, id)),
+  };
+}
+let itemStore, logStore;
+let items = [], logs = [], byId = {};
+const online = () => !!(CFG.FIREBASE && ls.get("wx.code"));
+
+// ---------- 날씨 ----------
+const WCODE = (c) =>
+  c === 0 ? ["☀️", "맑음"] : c <= 2 ? ["🌤️", "구름 조금"] : c === 3 ? ["☁️", "흐림"] : c <= 48 ? ["🌫️", "안개"] :
+  c <= 57 ? ["🌦️", "이슬비"] : c <= 67 ? ["🌧️", "비"] : c <= 77 ? ["🌨️", "눈"] : c <= 82 ? ["🌦️", "소나기"] : c <= 86 ? ["🌨️", "눈"] : ["⛈️", "뇌우"];
+let wx = null, day = 0;
+
+async function locate() {
+  if (S.place.mode !== "gps") return S.place;
+  const last = ls.get("wx.lastPos", null);
+  try {
+    const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { timeout: 8000, maximumAge: 30 * 60e3 }));
+    const p = { lat: +pos.coords.latitude.toFixed(3), lon: +pos.coords.longitude.toFixed(3) };
+    if (!last || Math.abs(last.lat - p.lat) > 0.02 || Math.abs(last.lon - p.lon) > 0.02 || !last.name) p.name = await placeName(p);
+    else p.name = last.name;
+    ls.set("wx.lastPos", p);
+    return p;
+  } catch {
+    if (last) return last;
+    toast("위치를 못 찾아서 기본 지역을 보여 줘요");
+    return DEFAULT_PLACE;
+  }
+}
+async function placeName({ lat, lon }) {
+  try {
+    const r = await (await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=ko`)).json();
+    const parts = [r.city, r.locality].filter(Boolean);
+    return [...new Set(parts)].join(" ") || r.principalSubdivision || "현재 위치";
+  } catch { return "현재 위치"; }
+}
+
+async function loadWeather(force = false) {
+  const p = await locate();
+  $("#placeName").textContent = p.name || "현재 위치";
+  const cache = ls.get("wx.wcache", null);
+  if (!force && cache && Date.now() - cache.at < 30 * 60e3 && Math.abs(cache.lat - p.lat) < 0.02 && Math.abs(cache.lon - p.lon) < 0.02) { wx = cache.data; return; }
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}` +
+    `&current=temperature_2m,apparent_temperature,weather_code` +
+    `&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2&wind_speed_unit=ms`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("weather " + r.status);
+  wx = await r.json();
+  ls.set("wx.wcache", { at: Date.now(), lat: p.lat, lon: p.lon, data: wx });
+}
+
+// 그날 외출 시간대 정보
+function dayInfo(d) {
+  if (!wx) return null;
+  const date = dateOf(d), h = wx.hourly, hours = [];
+  h.time.forEach((t, i) => {
+    if (!t.startsWith(date)) return;
+    const hr = +t.slice(11, 13);
+    if (hr < S.start || hr > S.end) return;
+    hours.push({ hr, temp: h.temperature_2m[i], feel: h.apparent_temperature[i], pop: h.precipitation_probability[i] ?? 0, rain: h.precipitation[i] ?? 0, code: h.weather_code[i], wind: h.wind_speed_10m[i] });
+  });
+  if (!hours.length) return null;
+  const f = dayFeel(hours);
+  const di = wx.daily.time.indexOf(date);
+  const code = di >= 0 ? wx.daily.weather_code[di] : hours[0].code;
+  return { date, hours, ...f, code, pop: Math.max(...hours.map((x) => x.pop)), rainSum: hours.reduce((s, x) => s + x.rain, 0), wind: Math.max(...hours.map((x) => x.wind)),
+    tmin: Math.min(...hours.map((x) => x.temp)), tmax: Math.max(...hours.map((x) => x.temp)) };
+}
+
+// ---------- 추천 ----------
+let model = { c: 0, d: 0, n: 0 }, recs = [], recIdx = 0, recKey = "";
+const logOf = (date) => logs.find((g) => g.id === date);
+function recentSet(date) {
+  const s = new Set(), t = new Date(date + "T00:00");
+  for (const g of logs) { const age = (t - new Date(g.id + "T00:00")) / 864e5; if (age >= 1 && age <= 2) (g.items || []).forEach((id) => s.add(id)); }
+  return s;
+}
+
+function renderHome() {
+  const info = dayInfo(day);
+  if (!info) { $("#wxCard").innerHTML = `<div class="skel">날씨를 불러오지 못했어요 <button class="btn" id="retryWx">다시</button></div>`; $("#retryWx")?.addEventListener("click", () => start(true)); $("#outfitCard").innerHTML = ""; $("#feelCard").hidden = true; return; }
+  const [icon, wtext] = WCODE(info.code);
+  const want = target(info.T, model);
+  const notes = [];
+  if (info.pop >= 50 || info.rainSum >= 1) notes.push(`<span class="note rain">☔ 우산 챙기세요 (비 올 확률 ${info.pop}%)</span>`);
+  if (info.wind >= 8) notes.push(`<span class="note wind">🌬️ 바람이 세요 (${r1(info.wind)}m/s)</span>`);
+  if (info.tmax - info.tmin >= 8) notes.push(`<span class="note gap">🌡️ 일교차 ${r1(info.tmax - info.tmin)}° — 벗기 쉬운 겉옷</span>`);
+  const cur = day === 0 && wx.current ? ` · 지금 ${r1(wx.current.temperature_2m)}°` : "";
+  const hrs = info.hours.filter((x, i) => i % 2 === 0 || info.hours.length <= 8);
+  $("#wxCard").innerHTML = `
+    <div class="wx-main"><div class="wx-icon">${icon}</div>
+      <div><div class="wx-feel">${r1(info.T)}°<small>오늘 옷 기준 체감</small></div>
+      <div class="muted">${wtext} · 최저 ${r1(info.tmin)}° 최고 ${r1(info.tmax)}°${cur}</div></div></div>
+    <div class="hours">${hrs.map((x) => `<div class="hour">${x.hr}시<i>${WCODE(x.code)[0]}</i><b>${r1(x.feel)}°</b></div>`).join("")}</div>
+    ${notes.length ? `<div class="notes">${notes.join("")}</div>` : ""}`;
+  $(".wx-feel small").textContent = day === 0 ? "오늘 체감" : "내일 체감";
+
+  // 고른 옷이 있으면 그것, 없으면 추천
+  const log = logOf(info.date);
+  const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + (x.warm || "") + (x.away ? 1 : 0)).join()}`;
+  if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date) }); }
+  const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
+  const who = day === 0 ? "오늘" : "내일";
+  let body;
+  if (rec) {
+    const [word, cls] = fitWord(rec.W - want);
+    body = `<div class="outfit-head"><h2>${picked ? `${who} 입을 옷 ✓` : `${who}의 코디`}</h2><span class="fitword ${cls}">${word}</span></div>
+      <div class="pieces">${rec.items.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></div>`).join("")}</div>`;
+  } else {
+    body = `<div class="outfit-head"><h2>${who}의 코디</h2></div><div class="generic">${genericOutfit(want)}</div>
+      <p class="why">옷장에 상의와 하의(또는 원피스)를 넣으면 내 옷으로 골라 줘요.</p>`;
+  }
+  const off = degOffset(info.T, model);
+  const why = model.n >= 3 && Math.abs(off) >= 0.5
+    ? `기록 ${model.n}개를 보면 이 날씨에 보통보다 ${Math.abs(off).toFixed(1)}° 더 ${off > 0 ? "춥게" : "덥게"} 느끼는 편이라 ${off > 0 ? "조금 더 따뜻하게" : "조금 더 시원하게"} 골랐어요.`
+    : model.n >= 3 ? `기록 ${model.n}개를 보면 보통 사람과 비슷하게 느끼는 편이에요.`
+    : `기록이 쌓일수록 나에게 맞춰져요 (지금 ${model.n}개, 3개부터 반영).`;
+  const btns = picked
+    ? `<button class="btn" data-a="choose">바꾸기</button><button class="btn" data-a="unpick">추천 다시 보기</button>`
+    : `${recs.length > 1 ? `<button class="btn" data-a="next">↻ 다른 코디</button>` : ""}${items.length ? `<button class="btn" data-a="choose">직접 고르기</button>` : `<button class="btn" data-a="closet">옷 넣기</button>`}${rec ? `<button class="btn primary" data-a="wear">이걸로 입을래요</button>` : ""}`;
+  $("#outfitCard").innerHTML = `${body}<p class="why">${why}</p><div class="actions">${btns}</div>`;
+  renderFeel(info, rec, want);
+}
+
+function renderFeel(info, rec, want) {
+  const card = $("#feelCard");
+  // 오늘: 오늘 어땠는지 / 내일 화면: 숨김. 어제 기록이 남아 있으면 같이 물어봐요.
+  if (day !== 0) { card.hidden = true; return; }
+  const y = dateOf(-1), yl = logOf(y);
+  const today = logOf(info.date);
+  const now = new Date().getHours();
+  let html = `<h2>오늘 입은 옷 어땠어요?</h2><p class="muted" style="margin:4px 0 0">${now < 15 && !today?.feel ? "저녁에 눌러 주면 다음 추천이 더 정확해져요." : "누를 때마다 나에게 맞게 배워요."}</p>
+    <div class="feels">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${today?.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`;
+  if (yl?.items?.length && !yl.feel) html += `<p class="muted" style="margin:14px 0 0">어제(${md(y)}) 입은 옷은 어땠어요?</p>
+    <div class="feels">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn" data-yfeel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`;
+  card.innerHTML = html;
+  card.hidden = false;
+  card.onclick = async (e) => {
+    const b = e.target.closest("[data-feel],[data-yfeel]");
+    if (!b) return;
+    if (b.dataset.yfeel) { await logStore.set(y, { ...yl, feel: b.dataset.yfeel, at: Date.now() }); toast("어제 기록을 저장했어요"); return; }
+    const list = rec?.items || [];
+    await logStore.set(info.date, {
+      ...(today || {}), date: info.date, T: +info.T.toFixed(1), tmin: info.tmin, tmax: info.tmax, want: +want.toFixed(2),
+      items: list.map((x) => x.id), W: rec ? +rec.W.toFixed(2) : +want.toFixed(2), feel: b.dataset.feel, at: Date.now(),
+    });
+    toast(b.dataset.feel === "good" ? "좋아요! 기록했어요 😊" : "기록했어요. 다음 추천부터 반영돼요");
+  };
+}
+
+$("#outfitCard").addEventListener("click", async (e) => {
+  const a = e.target.closest("[data-a]")?.dataset.a;
+  if (!a) return;
+  const info = dayInfo(day);
+  if (a === "next") { recIdx++; renderHome(); }
+  if (a === "closet") go("closet");
+  if (a === "wear") {
+    const rec = recs[recIdx % recs.length];
+    await logStore.set(info.date, { ...(logOf(info.date) || {}), date: info.date, T: +info.T.toFixed(1), tmin: info.tmin, tmax: info.tmax, want: +target(info.T, model).toFixed(2), items: rec.items.map((x) => x.id), W: +rec.W.toFixed(2) });
+    toast("좋아요! 저녁에 어땠는지 알려 주세요");
+  }
+  if (a === "unpick") { const g = logOf(info.date); if (g) { if (g.feel) await logStore.set(g.id, { ...g, items: [] }); else await logStore.remove(g.id); } }
+  if (a === "choose") openChooser(info);
+});
+
+$("#dayTabs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-day]");
+  if (!b) return;
+  day = +b.dataset.day;
+  $$("#dayTabs button").forEach((x) => x.classList.toggle("on", x === b));
+  renderHome();
+});
+
+// 직접 고르기
+function openChooser(info) {
+  const log = logOf(info.date);
+  const sel = new Set(log?.items?.length ? log.items : (recs[recIdx % Math.max(1, recs.length)]?.items || []).map((x) => x.id));
+  const draw = () => {
+    const W = outfitWarmth([...sel].map((id) => byId[id]).filter(Boolean));
+    const [word, cls] = fitWord(W - target(info.T, model));
+    openSheet(`<div class="sheet-head"><h2>입을 옷 고르기</h2><span class="fitword ${cls}">${sel.size ? word : "옷을 골라 주세요"}</span></div>
+      ${Object.entries(CATS).map(([c, cat]) => { const list = items.filter((it) => typeOf(it.type).cat === c); return list.length ? `<label class="f">${cat.ko}</label><div class="pick-grid">${list.map((it) => `<button class="pick${sel.has(it.id) ? " on" : ""}" data-id="${it.id}"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></button>`).join("")}</div>` : ""; }).join("")}
+      <div class="row" style="margin-top:16px"><button class="btn" data-x="close">취소</button><button class="btn primary spacer" data-x="save" ${sel.size ? "" : "disabled"}>이걸로 입을래요</button></div>`, (e) => {
+      const p = e.target.closest("[data-id]");
+      if (p) { sel.has(p.dataset.id) ? sel.delete(p.dataset.id) : sel.add(p.dataset.id); const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; return; }
+      const x = e.target.closest("[data-x]")?.dataset.x;
+      if (x === "close") closeSheet();
+      if (x === "save") {
+        const list = [...sel].map((id) => byId[id]).filter(Boolean);
+        logStore.set(info.date, { ...(logOf(info.date) || {}), date: info.date, T: +info.T.toFixed(1), tmin: info.tmin, tmax: info.tmax, want: +target(info.T, model).toFixed(2), items: list.map((x) => x.id), W: +outfitWarmth(list).toFixed(2) });
+        closeSheet(); toast("입을 옷으로 정했어요");
+      }
+    });
+  };
+  draw();
+}
+
+// ---------- 옷장 ----------
+let catFilter = ls.get("wx.cat", "all");
+function renderCloset() {
+  const counts = {};
+  items.forEach((it) => { const c = typeOf(it.type).cat; counts[c] = (counts[c] || 0) + 1; });
+  $("#closetCount").textContent = items.length ? `${items.length}벌` : "";
+  $("#catChips").innerHTML = [["all", "전체"], ...Object.entries(CATS).map(([k, v]) => [k, v.ko])]
+    .map(([k, ko]) => `<button class="chip${catFilter === k ? " on" : ""}" data-cat="${k}">${ko}${k !== "all" && counts[k] ? ` ${counts[k]}` : ""}</button>`).join("");
+  const list = items.filter((it) => catFilter === "all" || typeOf(it.type).cat === catFilter)
+    .sort((a, b) => Object.keys(CATS).indexOf(typeOf(a.type).cat) - Object.keys(CATS).indexOf(typeOf(b.type).cat) || (a.warm || 0) - (b.warm || 0) || (b.createdAt || 0) - (a.createdAt || 0));
+  $("#closetGrid").innerHTML = list.length ? list.map((it) => `<button class="item${it.away ? " away" : ""}" data-id="${it.id}">
+      ${it.away ? `<span class="badge">빼 둠</span>` : ""}<div class="ph">${phHtml(it)}</div>
+      <div class="nm">${esc(it.name)}</div><div class="wm">${"●".repeat(it.warm || 1)}${"○".repeat(5 - (it.warm || 1))}</div></button>`).join("")
+    : `<div class="empty" style="grid-column:1/-1"><b>👕</b>${items.length ? "이 종류의 옷이 없어요" : "아직 옷이 없어요.<br>오른쪽 아래 <b style='display:inline;font-size:inherit'>＋ 옷 추가</b>로 사진을 찍어 넣어 보세요."}</div>`;
+}
+$("#catChips").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catFilter = b.dataset.cat; ls.set("wx.cat", catFilter); renderCloset(); });
+$("#closetGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) openEditor(byId[b.dataset.id]); });
+$("#btnAdd").addEventListener("click", () => openSheet(`<div class="sheet-head"><h2>옷 추가</h2><button class="btn ghost" data-x="close">닫기</button></div>
+  <p class="muted">옷 하나를 바닥이나 침대에 펼쳐 놓고 위에서 찍으면 배경이 깔끔하게 지워져요.</p>
+  <button class="btn primary block" data-x="photo">📷 사진 찍기·고르기</button>
+  <button class="btn block" style="margin-top:8px" data-x="nophoto">✏️ 사진 없이 추가</button>`, (e) => {
+  const x = e.target.closest("[data-x]")?.dataset.x;
+  if (x === "close") closeSheet();
+  if (x === "photo") { $("#fileIn").value = ""; $("#fileIn").click(); }
+  if (x === "nophoto") openEditor(null);
+}));
+
+$("#fileIn").addEventListener("change", async () => {
+  const file = $("#fileIn").files[0];
+  if (!file) return;
+  const steps = ["사진 읽기", "배경 지우기", "옷 종류·두께 알아보기"];
+  let cur = 0;
+  const show = (pct, note = "") => {
+    $("#sheet").innerHTML = `<div class="grab"></div><h2>AI가 옷을 살펴보는 중</h2>
+      <div class="progress"><div style="width:${Math.round(pct * 100)}%"></div></div><p class="muted" style="margin:0 0 6px">${esc(note)}</p>
+      ${steps.map((s, i) => `<div class="step${i < cur ? " done" : i === cur ? " on" : ""}">${i < cur ? "✓" : i === cur ? "⏳" : "·"} ${s}</div>`).join("")}`;
+  };
+  $("#sheetBg").hidden = false; $("#sheetBg").onclick = null; $("#sheet").onclick = null;
+  show(0.05);
+  let orig, cut = null, ai = null, color = null;
+  try {
+    orig = await fileToCanvas(file);
+    cur = 1; show(0.15, "처음 한 번은 AI 파일을 받느라 1~2분 걸릴 수 있어요");
+    const A = await import("./ai.js");
+    const bg = await A.removeBg(orig, (p, t) => show(0.15 + p * 0.35, t));
+    cut = cutout(bg);
+    color = mainColor(cut);
+    cur = 2; show(0.55, "");
+    ai = await A.classify(cut, (p, t) => show(0.55 + p * 0.4, t), { onWhite, rotate });
+    cut = rotate(cut, ai.rot);   // 옆으로 누운 옷은 똑바로 세워서 저장
+  } catch (err) {
+    console.error(err);
+    toast("AI가 잘 안 됐어요. 직접 골라 주세요");
+  }
+  const photo = toStored(cut || orig), rawPhoto = cut ? toStored(orig) : null;
+  const t = ai?.types?.[0];
+  let warm = typeOf(t?.id || "tee_s").warm;
+  if (ai) warm = Math.min(5, Math.max(1, warm + (ai.thick > 0.75 ? 1 : ai.thick < 0.25 ? -1 : 0)));
+  openEditor(null, { photo, rawPhoto, type: t?.id, warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai });
+});
+
+function autoName(it) { return `${it.color && it.color !== "여러색" ? it.color + " " : ""}${typeOf(it.type).ko}`; }
+
+function openEditor(item, draft = null) {
+  const isNew = !item;
+  const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", memo: "", photo: draft?.photo || null, away: false };
+  if (!it.name) it.name = autoName(it);
+  let nameTouched = !isNew, useRaw = false;
+  const ai = draft?.ai;
+  const typeOpts = Object.entries(CATS).map(([c, cat]) => `<optgroup label="${cat.ko}">${TYPES.filter((t) => t.cat === c).map((t) => `<option value="${t.id}">${t.ko}</option>`).join("")}</optgroup>`).join("");
+  const draw = () => {
+    const sug = ai ? ai.types.slice(0, 3).filter((x) => x.p >= 0.05) : [];
+    openSheet(`<div class="sheet-head"><h2>${isNew ? "새 옷" : "옷 고치기"}</h2><button class="btn ghost" data-x="close">닫기</button></div>
+      <div class="preview">${it.photo ? `<img src="${(useRaw && draft?.rawPhoto) || it.photo}" alt="">` : CAT_EMOJI[typeOf(it.type).cat]}</div>
+      ${draft?.rawPhoto ? `<label class="check" style="justify-content:center"><input type="checkbox" id="eRaw" ${useRaw ? "checked" : ""}>배경이 이상하면: 원본 사진 쓰기</label>` : ""}
+      <label class="f">종류${ai ? `<span class="ai-tag">AI 추천</span>` : ""}</label>
+      ${sug.length ? `<div class="ai-sugg">${sug.map((s) => `<button class="chip${it.type === s.id ? " on" : ""}" data-type="${s.id}">${typeOf(s.id).ko}<small>${Math.round(s.p * 100)}%</small></button>`).join("")}</div><div style="height:8px"></div>` : ""}
+      <select id="eType">${typeOpts}</select>
+      <label class="f">두께(따뜻함)${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
+      <div class="chips" id="eWarm">${[1, 2, 3, 4, 5].map((w) => `<button class="chip${it.warm === w ? " on" : ""}" data-warm="${w}">${WARM_KO[w]}</button>`).join("")}</div>
+      <label class="f">색${draft?.color ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
+      <div class="chips" id="eColor">${Object.entries(COLORS).map(([k, v]) => `<button class="chip${it.color === k ? " on" : ""}" data-color="${k}"><span class="color-dot" style="background:${v}"></span>${k}</button>`).join("")}</div>
+      <label class="f">무늬${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
+      <div class="chips" id="ePat">${PATTERNS.map((p) => `<button class="chip${it.pattern === p.id ? " on" : ""}" data-pat="${p.id}">${p.ko}</button>`).join("")}</div>
+      <label class="f">이름</label><input type="text" id="eName" value="${esc(it.name)}" maxlength="30">
+      <label class="f">메모 (선택)</label><input type="text" id="eMemo" value="${esc(it.memo || "")}" maxlength="80" placeholder="예: 안에 기모 있음">
+      <label class="check"><input type="checkbox" id="eAway" ${it.away ? "checked" : ""}>지금은 추천에서 빼 두기 (빨래·수선 중)</label>
+      ${ai ? `<p class="muted">AI 짐작은 틀릴 수 있어요. 맞지 않으면 눌러서 고쳐 주세요.</p>` : ""}
+      <div class="row" style="margin-top:16px">${isNew ? "" : `<button class="btn danger" data-x="del">지우기</button>`}<button class="btn primary spacer" data-x="save">저장</button></div>`, onClick);
+    $("#eType").value = it.type;
+    $("#eType").onchange = () => setType($("#eType").value);
+    $("#eName").oninput = () => { it.name = $("#eName").value; nameTouched = true; };
+    $("#eMemo").oninput = () => { it.memo = $("#eMemo").value; };
+    $("#eAway").onchange = () => { it.away = $("#eAway").checked; };
+    if ($("#eRaw")) $("#eRaw").onchange = () => { useRaw = $("#eRaw").checked; redraw(); };
+  };
+  const redraw = () => { const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; };
+  const rename = () => { if (!nameTouched) it.name = autoName(it); };
+  const setType = (id) => { if (it.type !== id) { it.type = id; it.warm = typeOf(id).warm; } rename(); redraw(); };
+  async function onClick(e) {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.type) setType(b.dataset.type);
+    if (b.dataset.warm) { it.warm = +b.dataset.warm; redraw(); }
+    if (b.dataset.color) { it.color = it.color === b.dataset.color ? "" : b.dataset.color; rename(); redraw(); }
+    if (b.dataset.pat) { it.pattern = b.dataset.pat; redraw(); }
+    const x = b.dataset.x;
+    if (x === "close") closeSheet();
+    if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
+    if (x === "save") {
+      if (!it.name.trim()) it.name = autoName(it);
+      const data = { type: it.type, warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+        photo: (useRaw && draft?.rawPhoto) || it.photo || null, createdAt: it.createdAt || Date.now() };
+      b.disabled = true;
+      try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }
+      catch (err) { console.error(err); b.disabled = false; toast("저장하지 못했어요"); }
+    }
+  }
+  draw();
+}
+
+// ---------- 기록 ----------
+function renderLogs() {
+  const done = logs.filter((g) => g.feel).sort((a, b) => b.id.localeCompare(a.id));
+  const n = model.n;
+  let txt;
+  if (n < 3) txt = `<p>기록이 <b>${n}개</b> 있어요. 3개가 넘으면 나에게 맞춘 분석이 시작돼요.</p><p class="muted">홈에서 하루를 마칠 때 '오늘 입은 옷 어땠어요?'를 눌러 주세요.</p>`;
+  else {
+    const o10 = degOffset(10, model), o25 = degOffset(25, model);
+    const say = (o) => Math.abs(o) < 0.5 ? "보통 사람과 비슷해요" : `보통보다 <b>${Math.abs(o).toFixed(1)}° 더 ${o > 0 ? "춥게" : "덥게"}</b> 느껴요`;
+    const cnt = (k) => done.filter((g) => g.feel === k).length;
+    txt = `<p>기록 <b>${n}개</b>로 분석했어요.</p>
+      <p>· 쌀쌀한 날(10°)엔 ${say(o10)}<br>· 더운 날(25°)엔 ${say(o25)}</p>
+      <p class="muted">추웠어요 ${cnt("cold")} · 딱 좋았어요 ${cnt("good")} · 더웠어요 ${cnt("hot")}</p>`;
+  }
+  $("#analysisCard").innerHTML = `<h2>나의 체감</h2>${txt}${chartSvg(done)}`;
+  $("#logList").innerHTML = `<h2 style="margin-bottom:6px">날짜별 기록</h2>` + (done.length ? done.map((g) => {
+    const list = (g.items || []).map((id) => byId[id]).filter(Boolean);
+    return `<button class="log" data-log="${g.id}"><span class="em">${FEEL[g.feel].emoji}</span><span><div class="dt">${md(g.id)}</div><div class="muted">체감 ${r1(g.T)}° · ${FEEL[g.feel].ko}</div></span>
+      <span class="mini">${list.slice(0, 4).map((it) => `<span class="ph">${phHtml(it)}</span>`).join("")}</span></button>`;
+  }).join("") : `<p class="muted">아직 기록이 없어요.</p>`);
+}
+$("#logList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-log]");
+  if (!b) return;
+  const g = logOf(b.dataset.log);
+  openSheet(`<div class="sheet-head"><h2>${md(g.id)}</h2><button class="btn ghost" data-x="close">닫기</button></div>
+    <p class="muted">체감 ${r1(g.T)}° (최저 ${r1(g.tmin)}° 최고 ${r1(g.tmax)}°)</p>
+    <div class="pieces">${(g.items || []).map((id) => byId[id]).filter(Boolean).map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></div>`).join("") || `<p class="muted">입은 옷 정보 없음</p>`}</div>
+    <label class="f">느낌 바꾸기</label>
+    <div class="feels" style="margin-top:0">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${g.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>
+    <button class="btn danger block" style="margin-top:14px" data-x="del">이 기록 지우기</button>`, async (e) => {
+    const f = e.target.closest("[data-feel]");
+    if (f) { await logStore.set(g.id, { ...g, feel: f.dataset.feel }); closeSheet(); toast("바꿨어요"); }
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") closeSheet();
+    if (x === "del" && confirm("이 기록을 지울까요?")) { await logStore.remove(g.id); closeSheet(); }
+  });
+});
+
+// 그래프: 가로 = 체감 온도, 세로 = 입은 옷 따뜻함
+function chartSvg(done) {
+  const W = 320, H = 200, L = 30, R = 10, T = 10, B = 26;
+  const ts = done.map((g) => g.T);
+  const x0 = Math.min(-5, ...ts.map((t) => Math.floor(t / 5) * 5)), x1 = Math.max(30, ...ts.map((t) => Math.ceil(t / 5) * 5));
+  const y1 = 22;
+  const X = (t) => L + ((t - x0) / (x1 - x0)) * (W - L - R), Y = (w) => T + (1 - w / y1) * (H - T - B);
+  const line = (f) => { let d = ""; for (let t = x0; t <= x1; t += 1) d += `${d ? "L" : "M"}${X(t).toFixed(1)},${Y(Math.min(y1, f(t))).toFixed(1)}`; return d; };
+  let g = "";
+  for (let t = Math.ceil(x0 / 10) * 10; t <= x1; t += 10) g += `<line x1="${X(t)}" x2="${X(t)}" y1="${T}" y2="${H - B}" stroke="var(--line)"/><text x="${X(t)}" y="${H - 8}" font-size="11" text-anchor="middle" fill="var(--sub)">${t}°</text>`;
+  g += `<text x="4" y="${T + 10}" font-size="10" fill="var(--sub)">따뜻</text><text x="4" y="${H - B}" font-size="10" fill="var(--sub)">얇게</text>`;
+  g += `<path d="${line(base)}" fill="none" stroke="var(--sub)" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+  if (model.n >= 3) g += `<path d="${line((t) => target(t, model))}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`;
+  const col = { cold: "var(--cold)", good: "var(--good)", hot: "var(--hot)" };
+  for (const d of done) {
+    const list = (d.items || []).map((id) => byId[id]).filter(Boolean);
+    const w = list.length === (d.items || []).length && list.length ? outfitWarmth(list) : d.W;
+    if (w == null) continue;
+    g += `<circle cx="${X(d.T).toFixed(1)}" cy="${Y(Math.min(y1, w)).toFixed(1)}" r="5" fill="${col[d.feel]}" stroke="var(--card)" stroke-width="1.5"/>`;
+  }
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="체감 온도별 입은 옷 따뜻함">${g}</svg>
+    <div class="legend"><span><i class="line" style="background:var(--sub)"></i>보통 사람 기준</span>${model.n >= 3 ? `<span><i class="line" style="background:var(--accent)"></i>나에게 맞춘 기준</span>` : ""}
+    <span><i style="background:var(--cold)"></i>추웠어요</span><span><i style="background:var(--good)"></i>딱 좋았어요</span><span><i style="background:var(--hot)"></i>더웠어요</span></div>
+    <p class="muted" style="margin:8px 0 0">점 하나가 하루예요. 파란 점(추웠던 날)이 많으면 선이 위로 올라가서 더 따뜻하게 추천해요.</p>`;
+}
+
+// ---------- 설정 ----------
+function renderSet() {
+  $("#setPlaceNow").textContent = S.place.mode === "gps" ? "지금: 현재 위치 자동" : `지금: ${S.place.name}`;
+  const opt = (a, b, v) => Array.from({ length: b - a + 1 }, (_, i) => a + i).map((h) => `<option value="${h}" ${h === v ? "selected" : ""}>${h}시</option>`).join("");
+  $("#setStart").innerHTML = opt(5, 14, S.start);
+  $("#setEnd").innerHTML = opt(15, 23, S.end);
+  const code = ls.get("wx.code");
+  $("#setStore").innerHTML = online()
+    ? `<h2>저장 (Firebase)</h2><p class="muted">옷장과 기록이 인터넷에 저장돼요. 다른 폰에서도 아래 코드를 넣으면 같은 옷장을 볼 수 있어요. 코드는 비밀번호처럼 나만 알고 있어야 해요.</p>
+       <div class="code">${esc(code)}</div><div class="row" style="margin-top:8px"><button class="btn" data-s="copy">코드 복사</button><button class="btn ghost" data-s="change">다른 코드로 바꾸기</button></div>`
+    : CFG.FIREBASE
+      ? `<h2>저장</h2><p class="muted">아직 코드를 정하지 않았어요.</p><button class="btn primary" data-s="welcome">시작하기</button>`
+      : `<h2>저장 (이 폰에만)</h2><p class="muted">지금은 이 폰에만 저장돼요. Firebase를 연결하면 폰을 바꿔도 옷장과 기록이 남아요.</p>`;
+  $("#appVer").textContent = VERSION;
+  aiState();
+}
+$("#setStart").addEventListener("change", () => { S.start = +$("#setStart").value; saveS(); recKey = ""; renderHome(); });
+$("#setEnd").addEventListener("change", () => { S.end = +$("#setEnd").value; saveS(); recKey = ""; renderHome(); });
+$("#setGps").addEventListener("click", async () => { S.place = { ...DEFAULT_PLACE, mode: "gps" }; saveS(); renderSet(); await start(true); toast("현재 위치로 바꿨어요"); });
+$("#setCity").addEventListener("click", openCity);
+$("#btnPlace").addEventListener("click", openCity);
+$("#setStore").addEventListener("click", async (e) => {
+  const s = e.target.closest("[data-s]")?.dataset.s;
+  if (s === "copy") { try { await navigator.clipboard.writeText(ls.get("wx.code")); toast("복사했어요"); } catch { toast("길게 눌러 복사해 주세요"); } }
+  if (s === "change" || s === "welcome") openWelcome(s === "change");
+});
+
+function openCity() {
+  openSheet(`<div class="sheet-head"><h2>지역 고르기</h2><button class="btn ghost" data-x="close">닫기</button></div>
+    <input type="search" id="cityQ" placeholder="예: 해운대, 강남, 제주" enterkeyhint="search">
+    <div class="results" id="cityRes"></div>
+    <button class="btn block" style="margin-top:12px" data-x="gps">📍 현재 위치 자동으로</button>`, async (e) => {
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") closeSheet();
+    if (x === "gps") { S.place = { ...DEFAULT_PLACE, mode: "gps" }; saveS(); closeSheet(); await start(true); }
+    const r = e.target.closest("[data-lat]");
+    if (r) { S.place = { mode: "fixed", name: r.dataset.name, lat: +r.dataset.lat, lon: +r.dataset.lon }; saveS(); closeSheet(); renderSet(); await start(true); toast(`${r.dataset.name} 날씨로 바꿨어요`); }
+  });
+  let timer;
+  $("#cityQ").addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 350); });
+  $("#cityQ").focus();
+  async function search() {
+    const q = $("#cityQ").value.trim();
+    if (!q) { $("#cityRes").innerHTML = ""; return; }
+    try {
+      const r = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=ko&countryCode=KR`)).json();
+      $("#cityRes").innerHTML = (r.results || []).map((p) => { const name = [p.admin1, p.admin2, p.name].filter((x, i, a) => x && a.indexOf(x) === i).slice(-2).join(" ");
+        return `<button data-lat="${p.latitude}" data-lon="${p.longitude}" data-name="${esc(name)}"><b>${esc(p.name)}</b> <span class="muted">${esc([p.admin1, p.admin2].filter(Boolean).join(" "))}</span></button>`; }).join("") || `<p class="muted">찾는 지역이 없어요</p>`;
+    } catch { $("#cityRes").innerHTML = `<p class="muted">검색이 안 돼요. 인터넷을 확인해 주세요</p>`; }
+  }
+}
+
+// AI 파일 상태
+async function aiState() {
+  try {
+    const c = await caches.open("transformers-cache"), keys = await c.keys();
+    const has = (m) => keys.some((k) => k.url.includes(m) && k.url.endsWith(".onnx"));
+    const A = await import("./ai.js");
+    const ok = has(A.BG_MODEL) && has(A.CLIP_MODEL);
+    $("#aiState").textContent = ok ? "✓ AI 파일이 폰에 있어요" : keys.length ? "일부만 받았어요" : "아직 안 받았어요";
+  } catch { $("#aiState").textContent = ""; }
+}
+$("#aiPre").addEventListener("click", async () => {
+  const b = $("#aiPre"); b.disabled = true;
+  try {
+    const A = await import("./ai.js");
+    await A.loadBg((p, t) => (b.textContent = t));
+    await A.loadClip((p, t) => (b.textContent = t));
+    toast("AI 준비 끝!");
+  } catch (e) { console.error(e); toast("받지 못했어요. 인터넷을 확인해 주세요"); }
+  b.textContent = "AI 미리 받기"; b.disabled = false; aiState();
+});
+$("#aiDel").addEventListener("click", async () => { if (!confirm("AI 파일을 지울까요? 다음에 옷을 넣을 때 다시 받아요.")) return; await caches.delete("transformers-cache"); aiState(); toast("지웠어요"); });
+
+// ---------- 처음 시작 (Firebase 코드) ----------
+const newCode = () => { const A = "abcdefghjkmnpqrstuvwxyz23456789"; return Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => A[x % A.length]).join(""); };
+function openWelcome(changing = false) {
+  openSheet(`<div class="sheet-head"><h2>${changing ? "코드 바꾸기" : "반가워요! 👋"}</h2>${changing ? `<button class="btn ghost" data-x="close">닫기</button>` : ""}</div>
+    <p>옷장과 기록은 <b>나만의 코드</b>로 저장돼요. 폰을 바꾸거나 다른 폰에서 쓸 때 이 코드만 있으면 돼요.</p>
+    <button class="btn primary block" data-x="new">처음 써요 — 새로 시작</button>
+    <label class="f">다른 폰에서 쓰던 코드가 있어요</label>
+    <div class="row"><input type="text" id="codeIn" placeholder="코드 붙여 넣기" autocapitalize="off" autocomplete="off"><button class="btn" data-x="use">확인</button></div>`, async (e) => {
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") closeSheet();
+    if (x === "new") setCode(newCode());
+    if (x === "use") { const c = $("#codeIn").value.trim().toLowerCase(); if (c.length < 12) return toast("코드가 너무 짧아요 (12자 이상)"); setCode(c); }
+  }, !changing);
+}
+function setCode(c) { ls.set("wx.code", c); location.reload(); }
+
+// ---------- 화면 이동 ----------
+let view = "home";
+function go(v) {
+  view = v;
+  for (const k of ["home", "closet", "log", "set"]) $(`#${k}View`).hidden = k !== v;
+  $$("#tabbar button").forEach((b) => b.classList.toggle("on", b.dataset.go === v));
+  if (v === "closet") renderCloset();
+  if (v === "log") renderLogs();
+  if (v === "set") renderSet();
+  if (v === "home") renderHome();
+  scrollTo(0, 0);
+}
+$("#tabbar").addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (b) go(b.dataset.go); });
+
+// ---------- 창 ----------
+let sheetLocked = false;
+function openSheet(html, onClick, locked = false) {
+  sheetLocked = locked;
+  $("#sheet").innerHTML = `<div class="grab"></div>` + html;
+  $("#sheet").onclick = onClick || null;
+  $("#sheetBg").hidden = false;
+  $("#sheetBg").onclick = (e) => { if (e.target === $("#sheetBg") && !sheetLocked) closeSheet(); };
+}
+function closeSheet() { $("#sheetBg").hidden = true; $("#sheet").innerHTML = ""; }
+
+// ---------- 시작 ----------
+function refresh() {
+  byId = Object.fromEntries(items.map((x) => [x.id, x]));
+  model = fit(logs, byId);
+  if (view === "home") renderHome();
+  if (view === "closet") renderCloset();
+  if (view === "log") renderLogs();
+}
+async function start(force = false) {
+  try { await loadWeather(force); } catch (e) { console.error(e); if (!wx) toast("날씨를 불러오지 못했어요"); }
+  recKey = "";
+  refresh();
+}
+async function boot() {
+  if (online()) {
+    try { const code = ls.get("wx.code"); itemStore = await firebaseStore(code, "items"); logStore = await firebaseStore(code, "logs"); }
+    catch (e) { console.error(e); toast("인터넷 저장소에 연결하지 못해서 이 폰에만 저장해요"); itemStore = localStore("items"); logStore = localStore("logs"); }
+  } else { itemStore = localStore("items"); logStore = localStore("logs"); }
+  itemStore.subscribe((list) => { items = list; refresh(); });
+  logStore.subscribe((list) => { logs = list; refresh(); });
+  start();
+  if (CFG.FIREBASE && !ls.get("wx.code")) openWelcome();
+}
+// 앱을 다시 열었을 때 날짜가 바뀌었거나 오래됐으면 새로
+document.addEventListener("visibilitychange", () => { if (!document.hidden) start(); });
+boot();
+
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "127.0.0.1")) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
