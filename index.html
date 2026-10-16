@@ -257,6 +257,30 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 <div class="toast" id="toast"></div>
 
 <script src="config.js"></script>
+<script>
+// 안전장치: 앱 코드가 못 켜지면(폰에 예전 파일이 섞였을 때 등) 멈춘 화면 대신 알림 + '새로 받기' 버튼을 보여 줘요.
+(function () {
+  let msg = "";
+  window.addEventListener("error", (e) => { if (!window.__appReady) msg = msg || String(e.message || e.error || ""); });
+  function rescue() {
+    if (window.__appReady || document.getElementById("rescue")) return;
+    const d = document.createElement("div");
+    d.id = "rescue";
+    d.style.cssText = "position:fixed;inset:0;z-index:9999;background:#f4f1ec;color:#222;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;font:16px/1.6 -apple-system,sans-serif";
+    d.innerHTML = '<div style="font-size:40px">😵</div><b>앱을 켜지 못했어요</b><p style="margin:8px 0 16px;color:#666">폰에 저장된 예전 파일이 섞였을 수 있어요.<br>아래 버튼을 누르면 새로 받아요. (옷장·기록은 그대로예요)</p>'
+      + '<button id="rescueBtn" style="font:inherit;font-weight:700;padding:12px 24px;border:0;border-radius:12px;background:#3d6fe0;color:#fff">🔄 새로 받기</button>'
+      + (msg ? '<p style="margin-top:16px;font-size:12px;color:#999;word-break:break-all">' + msg.replace(/</g, "&lt;") + '</p>' : "");
+    document.body.appendChild(d);
+    document.getElementById("rescueBtn").onclick = async () => {
+      try { for (const r of (await navigator.serviceWorker?.getRegistrations()) || []) await r.unregister(); } catch (e) {}
+      try { for (const k of await caches.keys()) if (/^v\d/.test(k)) await caches.delete(k); } catch (e) {}
+      location.replace(location.pathname + "?r=" + Date.now());
+    };
+  }
+  window.addEventListener("error", () => setTimeout(rescue, 1500));
+  setTimeout(rescue, 15000);
+})();
+</script>
 <script type="module">
 import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
@@ -1205,6 +1229,8 @@ async function boot() {
 }
 // 앱을 다시 열었을 때 날짜가 바뀌었거나 오래됐으면 새로
 document.addEventListener("visibilitychange", () => { if (!document.hidden) start(); });
+window.__appReady = true;   // 앱 코드가 다 읽혔어요 (위 안전장치가 안 떠요)
+document.getElementById("rescue")?.remove();   // 늦게라도 켜졌으면 안전장치 화면은 치워요
 boot();
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "127.0.0.1")) navigator.serviceWorker.register("sw.js");
