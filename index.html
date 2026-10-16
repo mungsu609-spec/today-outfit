@@ -208,6 +208,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   <!-- 옷장 -->
   <section class="view" id="closetView" hidden>
     <h1>내 옷장 <span class="muted" id="closetCount"></span></h1>
+    <div class="chips scroll" id="seasonChips"></div>
     <div class="chips scroll" id="catChips"></div>
     <div class="grid" id="closetGrid"></div>
     <button class="fab" id="btnAdd">＋ 옷 추가</button>
@@ -257,8 +258,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 <script src="config.js"></script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
+import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
 const VERSION = "v9";
@@ -562,59 +564,77 @@ function openChooser(info) {
 }
 
 // ---------- 옷장 ----------
-let catFilter = ls.get("wx.cat", "all");
+let catFilter = ls.get("wx.cat", "all"), seasonFilter = ls.get("wx.season", "all");
 function renderCloset() {
+  // 계절 고르기 (전체 / 봄·가을 / 여름 / 겨울) → 그 안에서 종류별
+  const sCount = (k) => items.filter((it) => seasonsOf(it).includes(k)).length;
+  $("#seasonChips").innerHTML = [["all", "🗓️ 모든 계절"], ...SEASONS.map((x) => [x.id, `${x.emoji} ${x.ko}`])]
+    .map(([k, ko]) => `<button class="chip${seasonFilter === k ? " on" : ""}" data-season="${k}">${ko}${k !== "all" && sCount(k) ? ` ${sCount(k)}` : ""}</button>`).join("");
+  const inSeason = items.filter((it) => seasonFilter === "all" || seasonsOf(it).includes(seasonFilter));
   const counts = {};
-  items.forEach((it) => { const c = typeOf(it.type).cat; counts[c] = (counts[c] || 0) + 1; });
+  inSeason.forEach((it) => { const c = typeOf(it.type).cat; counts[c] = (counts[c] || 0) + 1; });
   $("#closetCount").textContent = items.length ? `${items.length}벌` : "";
   $("#catChips").innerHTML = [["all", "전체"], ...Object.entries(CATS).map(([k, v]) => [k, v.ko])]
     .map(([k, ko]) => `<button class="chip${catFilter === k ? " on" : ""}" data-cat="${k}">${ko}${k !== "all" && counts[k] ? ` ${counts[k]}` : ""}</button>`).join("");
-  const list = items.filter((it) => catFilter === "all" || typeOf(it.type).cat === catFilter)
+  const list = inSeason.filter((it) => catFilter === "all" || typeOf(it.type).cat === catFilter)
     .sort((a, b) => Object.keys(CATS).indexOf(typeOf(a.type).cat) - Object.keys(CATS).indexOf(typeOf(b.type).cat) || (a.warm || 0) - (b.warm || 0) || (b.createdAt || 0) - (a.createdAt || 0));
   $("#closetGrid").innerHTML = list.length ? list.map((it) => `<button class="item${it.away ? " away" : ""}" data-id="${it.id}">
       ${it.away ? `<span class="badge">빼 둠</span>` : ""}<div class="ph">${phHtml(it)}</div>
-      <div class="nm">${esc(it.name)}</div><div class="wm">${"●".repeat(it.warm || 1)}${"○".repeat(5 - (it.warm || 1))}</div></button>`).join("")
-    : `<div class="empty" style="grid-column:1/-1"><b>👕</b>${items.length ? "이 종류의 옷이 없어요" : "아직 옷이 없어요.<br>오른쪽 아래 <b style='display:inline;font-size:inherit'>＋ 옷 추가</b>로 사진을 찍어 넣어 보세요."}</div>`;
+      <div class="nm">${esc(it.name)}</div><div class="wm">${"●".repeat(it.warm || 1)}${"○".repeat(5 - (it.warm || 1))} ${SEASONS.filter((x) => seasonsOf(it).includes(x.id)).map((x) => x.emoji).join("")}</div></button>`).join("")
+    : `<div class="empty" style="grid-column:1/-1"><b>👕</b>${items.length ? (seasonFilter !== "all" && !inSeason.length ? "이 계절 옷이 없어요" : "이 종류의 옷이 없어요") : "아직 옷이 없어요.<br>오른쪽 아래 <b style='display:inline;font-size:inherit'>＋ 옷 추가</b>로 사진을 찍어 넣어 보세요."}</div>`;
 }
+$("#seasonChips").addEventListener("click", (e) => { const b = e.target.closest("[data-season]"); if (!b) return; seasonFilter = b.dataset.season; ls.set("wx.season", seasonFilter); renderCloset(); });
 $("#catChips").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catFilter = b.dataset.cat; ls.set("wx.cat", catFilter); renderCloset(); });
 $("#closetGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) openEditor(byId[b.dataset.id]); });
-// 기본 옷: 누르면 바로 옷장에 들어가요 (그림은 app/basics/, 도구/basics.html로 그림)
-const BASICS = [
-  { key: "tank-black", type: "sleeveless", color: "검정", name: "검정 나시" },
-  { key: "tank-white", type: "sleeveless", color: "흰색", name: "흰색 나시" },
-  { key: "tank-nude", type: "sleeveless", color: "베이지", name: "누드 나시" },
-  { key: "tee-black", type: "tee_s", color: "검정", name: "검정 반팔 티셔츠" },
-  { key: "tee-white", type: "tee_s", color: "흰색", name: "흰색 반팔 티셔츠" },
-];
+// 기본 옷: 종류(나시·반팔·긴팔 티셔츠)를 누르고 색을 고르면 바로 옷장에 들어가요. 그림은 basics.js가 고른 색으로 그려요.
+const basicKey = (it) => OLD_BASIC[it.basic] || it.basic;   // 예전 'tank-black' → 'tank:검정'
+const BASIC_COLORS = Object.keys(COLORS).filter((k) => k !== "여러색");
+const basicName = (k, color) => `${color} ${k.ko}`;
 // 받침이 있으면 을/은, 없으면 를/는
 const hasJong = (w) => { const c = w.charCodeAt(w.length - 1) - 0xac00; return c >= 0 && c < 11172 && c % 28 !== 0; };
 const eul = (w) => (hasJong(w) ? "을" : "를"), eun = (w) => (hasJong(w) ? "은" : "는");
-async function addBasic(b) {
-  const c = await urlToCanvas(`basics/${b.key}.webp`);
-  await itemStore.set(uid(), { type: b.type, len: defaultLen(b.type), warm: typeOf(b.type).warm, color: b.color, pattern: "plain", name: b.name, memo: "", away: false,
-    photo: toStored(c, 420), basic: b.key, createdAt: Date.now() });
+async function addBasic(k, color) {
+  const c = await basicCanvas(k.id, COLORS[color]);
+  await itemStore.set(uid(), { type: k.type, len: defaultLen(k.type), warm: typeOf(k.type).warm, color, pattern: "plain", name: basicName(k, color), memo: "", away: false,
+    photo: toStored(c, 420), basic: `${k.id}:${color}`, createdAt: Date.now() });
 }
 function openAdd() {
-  const count = (b) => items.filter((it) => it.basic === b.key).length;
+  const count = (k) => items.filter((it) => (basicKey(it) || "").startsWith(k.id + ":")).length;
   openSheet(`<div class="sheet-head"><h2>옷 추가</h2><button class="btn ghost" data-x="close">닫기</button></div>
   <p class="muted">옷 하나를 바닥이나 침대에 펼쳐 놓고 위에서 찍으면 배경이 깔끔하게 지워져요.</p>
   <button class="btn primary block" data-x="photo">📷 사진 찍기·고르기</button>
   <button class="btn block" style="margin-top:8px" data-x="nophoto">✏️ 사진 없이 추가</button>
   <label class="f">기본 옷 바로 넣기</label>
-  <p class="muted" style="margin:0">누르면 바로 옷장에 들어가요. 두께 등은 옷장에서 눌러서 고칠 수 있어요.</p>
-  <div class="pick-grid">${BASICS.map((b) => `<button class="pick${count(b) ? " on" : ""}" data-basic="${b.key}"><div class="ph"><img src="basics/${b.key}.webp" alt=""></div><div class="nm">${count(b) ? "✓ " : ""}${b.name}</div></button>`).join("")}</div>`, async (e) => {
+  <p class="muted" style="margin:0">종류를 누르고 색을 고르면 바로 옷장에 들어가요.</p>
+  <div class="pick-grid">${BASIC_KINDS.map((k) => `<button class="pick" data-basic="${k.id}"><div class="ph"><img src="${basicUrl(k.id, "#e9e6e1")}" alt=""></div><div class="nm">${k.ko}${count(k) ? ` <b>${count(k)}</b>` : ""}</div></button>`).join("")}</div>`, async (e) => {
     const k = e.target.closest("[data-basic]")?.dataset.basic;
-    if (k) {
-      const b = BASICS.find((x) => x.key === k);
-      if (count(b) && !confirm(`'${b.name}'${eun(b.name)} 이미 옷장에 있어요. 하나 더 넣을까요?`)) return;
-      try { await addBasic(b); toast(`${b.name}${eul(b.name)} 옷장에 넣었어요 👕`); openAdd(); }
-      catch (err) { console.error(err); toast("넣지 못했어요"); }
-      return;
-    }
+    if (k) return openBasic(BASIC_KINDS.find((x) => x.id === k));
     const x = e.target.closest("[data-x]")?.dataset.x;
     if (x === "close") closeSheet();
     if (x === "photo") { $("#fileIn").value = ""; $("#fileIn").click(); }
     if (x === "nophoto") openEditor(null);
+  });
+}
+// 기본 옷 색 고르기: 그림이 고른 색으로 바로 바뀌어요. 옷장에 이미 있는 색엔 ✓
+function openBasic(k, color = null) {
+  const have = (c) => items.some((it) => basicKey(it) === `${k.id}:${c}`);
+  openSheet(`<div class="sheet-head"><h2>${k.ko}</h2><button class="btn ghost" data-x="back">← 뒤로</button></div>
+    <div class="preview"><img id="bPrev" src="${basicUrl(k.id, color ? COLORS[color] : "#e9e6e1")}" alt=""></div>
+    <label class="f">색 고르기</label>
+    <div class="chips">${BASIC_COLORS.map((c) => `<button class="chip${c === color ? " on" : ""}" data-c="${c}"><span class="color-dot" style="background:${COLORS[c]}"></span>${c === "베이지" ? "베이지(누드)" : c}${have(c) ? " ✓" : ""}</button>`).join("")}</div>
+    <p class="muted">✓ = 옷장에 이미 있는 색. 두께 등은 넣은 뒤 옷장에서 눌러서 고칠 수 있어요.</p>
+    <button class="btn primary block" data-x="add" ${color ? "" : "disabled"}>${color ? `${basicName(k, color)} 옷장에 넣기` : "색을 골라 주세요"}</button>`, async (e) => {
+    const c = e.target.closest("[data-c]")?.dataset.c;
+    if (c) { const y = $("#sheet").scrollTop; openBasic(k, c); $("#sheet").scrollTop = y; return; }
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "back") openAdd();
+    if (x === "add" && color) {
+      const name = basicName(k, color);
+      if (have(color) && !confirm(`'${name}'${eun(name)} 이미 옷장에 있어요. 하나 더 넣을까요?`)) return;
+      e.target.disabled = true;
+      try { await addBasic(k, color); toast(`${name}${eul(name)} 옷장에 넣었어요 👕`); openAdd(); }
+      catch (err) { console.error(err); e.target.disabled = false; toast("넣지 못했어요"); }
+    }
   });
 }
 $("#btnAdd").addEventListener("click", openAdd);
@@ -737,7 +757,7 @@ function openEditor(item, draft = null) {
   const isNew = !item;
   const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", len: draft?.len ?? defaultLen(draft?.type || "tee_s"), warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", sheer: "none", inner: false, memo: "", photo: draft?.photo || null, away: false };
   if (!it.name) it.name = autoName(it);
-  let nameTouched = !isNew, innerTouched = !isNew;
+  let nameTouched = !isNew, innerTouched = !isNew, seasonTouched = !!item?.seasons?.length;
   let adj = draft?.adj || null;   // 사진 맞추기 상태 (예전 옷은 누를 때 저장된 사진으로 만들어요)
   const ai = draft?.ai;
   const typeOpts = Object.entries(CATS).map(([c, cat]) => `<optgroup label="${cat.ko}">${TYPES.filter((t) => t.cat === c).map((t) => `<option value="${t.id}">${t.ko}</option>`).join("")}</optgroup>`).join("");
@@ -752,6 +772,7 @@ function openEditor(item, draft = null) {
       ${lenHtml()}
       <label class="f">두께(따뜻함)${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips" id="eWarm">${[1, 2, 3, 4, 5].map((w) => `<button class="chip${it.warm === w ? " on" : ""}" data-warm="${w}">${WARM_KO[w]}</button>`).join("")}</div>
+      ${seasonHtml()}
       ${layerHtml()}
       <label class="f">색${draft?.color ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips" id="eColor">${Object.entries(COLORS).map(([k, v]) => `<button class="chip${it.color === k ? " on" : ""}" data-color="${k}"><span class="color-dot" style="background:${v}"></span>${k}</button>`).join("")}</div>
@@ -772,6 +793,10 @@ function openEditor(item, draft = null) {
   const redraw = () => { const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; };
   const rename = () => { if (!nameTouched) it.name = autoName(it); };
   const setType = (id) => { if (it.type !== id) { it.type = id; it.warm = typeOf(id).warm; it.len = aiLen(id, ai); } rename(); redraw(); };
+  // 계절: 여러 개 골라도 돼요. 직접 고르기 전엔 종류·두께·길이로 짐작한 게 켜져 있어요(종류 등을 바꾸면 다시 짐작).
+  const curSeasons = () => (seasonTouched ? it.seasons : guessSeasons(it));
+  const seasonHtml = () => `<label class="f">계절 <small class="muted">(여러 개 골라도 돼요)</small>${seasonTouched ? "" : `<span class="ai-tag">자동</span>`}</label>
+      <div class="chips">${SEASONS.map((x) => `<button class="chip${curSeasons().includes(x.id) ? " on" : ""}" data-season="${x.id}">${x.emoji} ${x.ko}</button>`).join("")}</div>`;
   // 비침(상의·겉옷·하의·원피스), 이너 필요(상의·하의·원피스)
   const layerHtml = () => {
     let h = "";
@@ -784,8 +809,8 @@ function openEditor(item, draft = null) {
       ${it.inner ? `<p class="muted" style="margin:6px 0 0">${bottom ? "추천할 때 속바지·속치마를 챙기라고 알려 줘요." : "추천할 때 옷장의 나시·반팔 티셔츠를 안에 같이 골라 줘요."}</p>` : ""}`;
     }
     // 셔츠·블라우스: 겉옷으로도 입을지 (예전에 넣은 셔츠는 켜져 있어요)
-    if (typeOf(it.type).id === "shirt") h += `<label class="check"><input type="checkbox" id="eAsOuter" ${it.asOuter !== false ? "checked" : ""} ${it.inner ? "disabled" : ""}>👔 겉옷으로도 입기 (티셔츠·나시·원피스 위에 걸치기)</label>
-      <p class="muted" style="margin:2px 0 0">${it.inner ? "이너가 필요한 셔츠는 겉옷 대신으로는 추천하지 않아요." : it.asOuter !== false ? "추천할 때 겉옷 대신으로도 골라요." : "안에 입는 상의로만 추천해요."}</p>`;
+    if (typeOf(it.type).id === "shirt") h += `<label class="check"><input type="checkbox" id="eAsOuter" ${it.asOuter !== false ? "checked" : ""}>👔 겉옷으로도 입기 (티셔츠·나시·원피스 위에 걸치기)</label>
+      <p class="muted" style="margin:2px 0 0">${it.asOuter !== false ? "추천할 때 겉옷 대신으로도 골라요." : "안에 입는 상의로만 추천해요."}</p>`;
     return h;
   };
   // 소매 길이(상의·겉옷·원피스) / 기장(하의·원피스). 조끼처럼 길이가 정해진 건 안 보여요.
@@ -819,6 +844,12 @@ function openEditor(item, draft = null) {
       it.len = b.dataset.len; rename(); redraw();
     }
     if (b.dataset.hem) { it.hem = b.dataset.hem; rename(); redraw(); }
+    if (b.dataset.season) {
+      const cur = curSeasons(), k = b.dataset.season;
+      const next = cur.includes(k) ? cur.filter((x) => x !== k) : SEASONS.map((x) => x.id).filter((x) => x === k || cur.includes(x));
+      if (!next.length) return toast("계절을 하나 이상 골라 주세요");
+      it.seasons = next; seasonTouched = true; redraw();
+    }
     const x = b.dataset.x;
     if (x === "close") closeSheet();
     if (x === "adjust") {
@@ -829,7 +860,7 @@ function openEditor(item, draft = null) {
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
       const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", sheer: hasSheer(it.type) ? it.sheer || "none" : "none", inner: hasInner(it.type) && !!it.inner,
-        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), seasons: curSeasons(), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }

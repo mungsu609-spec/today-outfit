@@ -120,9 +120,9 @@ export const typeOf = (id) => TYPES.find((t) => t.id === id) || TYPES[0];
 // ---------- 이너·겉옷 대용 ----------
 // 이너로 입을 수 있는 옷: 안 비치는 나시·반팔 티셔츠
 export const canInner = (it) => ["sleeveless", "tee_s"].includes(typeOf(it.type).id) && !it.inner && (it.sheer || "none") === "none";
-// 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신 입을 수 있어요 (이너가 필요할 만큼 비치는 셔츠는 빼요)
-//  옷마다 '겉옷으로도 입기'(asOuter)를 끌 수 있어요. 예전에 넣은 셔츠는 켜진 걸로 봐요.
-export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && it.asOuter !== false && !it.inner;
+// 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신 입을 수 있어요.
+//  옷마다 '겉옷으로도 입기'(asOuter)로 정해요 — 비치는 셔츠도 사용자가 켜 두면 골라요. 예전에 넣은 셔츠는 켜진 걸로 봐요.
+export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && it.asOuter !== false;
 export const SHIRT_BASE = ["tee_s", "tee_l", "sleeveless"];   // 셔츠를 위에 걸칠 수 있는 상의
 
 // 무늬 옷끼리 겹치는지: 줄무늬·체크·꽃무늬는 서로(같은 무늬끼리도) 같이 입지 않아요.
@@ -145,16 +145,17 @@ export function patternClash(list, skip = []) {
 export function layers(list) {
   const cat = (it) => typeOf(it.type).cat;
   const tops = list.filter((it) => cat(it) === "top");
-  const needer = list.find((it) => it.inner && (cat(it) === "top" || cat(it) === "dress"));
-  let inner = null;
-  if (needer) inner = tops.filter((x) => x !== needer && canInner(x)).sort((a, b) => (typeOf(a.type).id === "sleeveless" ? 0 : 1) - (typeOf(b.type).id === "sleeveless" ? 0 : 1))[0] || null;
   let outer = list.find((it) => cat(it) === "outer") || null, shirtOuter = false;
+  // 겉옷이 없으면: 티셔츠·나시(또는 원피스) 위의 셔츠가 겉옷 대신 (셔츠 밑에 니트 등이 있으면 셔츠는 안에 입은 것)
   if (!outer) {
-    const rest = tops.filter((x) => x !== inner);
-    const shirt = [...rest].reverse().find(canShirtOuter);
-    const under = rest.filter((x) => x !== shirt);
+    const shirt = [...tops].reverse().find(canShirtOuter);
+    const under = tops.filter((x) => x !== shirt);
     if (shirt && (under.length ? under.every((x) => SHIRT_BASE.includes(typeOf(x.type).id)) : list.some((x) => cat(x) === "dress"))) { outer = shirt; shirtOuter = true; }
   }
+  // 겉옷 대신 걸친 셔츠는 비쳐도 이너를 따로 찾지 않아요 (밑에 입은 옷이 있으니까)
+  const needer = list.find((it) => it.inner && it !== (shirtOuter ? outer : null) && (cat(it) === "top" || cat(it) === "dress"));
+  let inner = null;
+  if (needer) inner = tops.filter((x) => x !== needer && x !== (shirtOuter ? outer : null) && canInner(x)).sort((a, b) => (typeOf(a.type).id === "sleeveless" ? 0 : 1) - (typeOf(b.type).id === "sleeveless" ? 0 : 1))[0] || null;
   return { outer, shirtOuter, inner, noInner: needer && !inner ? needer : null, bottomInner: list.filter((it) => it.inner && cat(it) === "bottom") };
 }
 
@@ -182,3 +183,26 @@ export const lenWord = (it) => {
   if (!k || l === defaultLen(it.type) || (LEN_FIXED[typeOf(it.type).id] && l !== "knee")) return hem;
   return [hem, k === "leg" ? LEG.find((x) => x.id === l).word : SLEEVE.find((x) => x.id === l).ko].filter(Boolean).join(" ");
 };
+
+// ---------- 계절 ----------
+// 옷마다 입는 계절(여러 개 가능). 고른 적 없는 옷은 종류·두께·길이로 짐작해요(옷장에서 고칠 수 있어요).
+export const SEASONS = [
+  { id: "spring", ko: "봄·가을", emoji: "🍂" },
+  { id: "summer", ko: "여름",    emoji: "☀️" },
+  { id: "winter", ko: "겨울",    emoji: "❄️" },
+];
+export function guessSeasons(it) {
+  const t = typeOf(it.type), id = t.id;
+  if (t.cat === "shoes") return id === "sandals" ? ["summer"] : id === "boots" ? ["spring", "winter"] : ["spring", "summer", "winter"];
+  if (t.cat === "acc") return ["winter"];
+  if (id === "padding") return ["winter"];
+  if (id === "coat") return ["spring", "winter"];
+  const w = (it.warm || t.warm) + lenWarmAdj(it) + sheerAdj(it);
+  const short = ["short", "sleeveless"].includes(lenOf(it)) || hemOf(it) === "short";
+  const out = [];
+  if (w >= 1.5 && w < 4.5) out.push("spring");
+  if (short || w <= 1.5) out.push("summer");
+  if (!short && w >= (t.cat === "outer" ? 4 : 3)) out.push("winter");
+  return out.length ? out : ["spring"];
+}
+export const seasonsOf = (it) => (it.seasons?.length ? it.seasons : guessSeasons(it));
