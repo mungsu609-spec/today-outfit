@@ -12,20 +12,68 @@ export async function fileToCanvas(file, max = 1280) {
   return c;
 }
 
-// 배경이 투명한 canvas → 옷 부분만 남게 잘라요 (가장자리 여유 4%)
-export function cutout(src) {
+// 배경이 투명한 canvas → 옷이 있는 네모 범위 {x0,y0,x1,y1} (못 찾으면 null)
+//  alpha: 이만큼 진해야 옷으로 봐요, frac: 줄마다 옷 픽셀이 (가장 많은 줄의) 이만큼은 있어야 해요 (점 같은 찌꺼기 무시)
+export function bbox(src, { alpha = 128, frac = 0.03 } = {}) {
   const { width: w, height: h } = src, d = src.getContext("2d").getImageData(0, 0, w, h).data;
   const rows = new Uint32Array(h), cols = new Uint32Array(w);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 128) { rows[y]++; cols[x]++; }
-  // 점처럼 남은 작은 찌꺼기는 무시: 줄마다 옷 픽셀이 조금은 있어야 옷으로 봐요
-  const minR = Math.max(2, Math.max(...rows) * 0.03), minC = Math.max(2, Math.max(...cols) * 0.03);
-  let y0 = rows.findIndex((v) => v >= minR), y1 = h - 1 - [...rows].reverse().findIndex((v) => v >= minR);
-  let x0 = cols.findIndex((v) => v >= minC), x1 = w - 1 - [...cols].reverse().findIndex((v) => v >= minC);
-  if (y0 < 0 || x0 < 0) return src;   // 아무것도 못 찾으면 그대로
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > alpha) { rows[y]++; cols[x]++; }
+  const minR = Math.max(2, Math.max(...rows) * frac), minC = Math.max(2, Math.max(...cols) * frac);
+  const y0 = rows.findIndex((v) => v >= minR), y1 = h - 1 - [...rows].reverse().findIndex((v) => v >= minR);
+  const x0 = cols.findIndex((v) => v >= minC), x1 = w - 1 - [...cols].reverse().findIndex((v) => v >= minC);
+  return y0 < 0 || x0 < 0 ? null : { x0, y0, x1, y1 };
+}
+
+// 배경이 투명한 canvas → 옷 부분만 남게 잘라요 (가장자리 여유 4%) — AI가 옷을 알아볼 때 써요
+export function cutout(src) {
+  const b = bbox(src);
+  if (!b) return src;   // 아무것도 못 찾으면 그대로
+  let { x0, y0, x1, y1 } = b;
+  const { width: w, height: h } = src;
   const pad = Math.round(Math.max(x1 - x0, y1 - y0) * 0.04);
   x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
   const c = mk(x1 - x0 + 1, y1 - y0 + 1);
   c.getContext("2d").drawImage(src, x0, y0, c.width, c.height, 0, 0, c.width, c.height);
+  return c;
+}
+
+// ---------- 사진 맞추기 (돌리기·기울이기·확대·옮기기) ----------
+// 상태 st = { rot: 90° 단위 돌리기, tilt: 살짝 기울이기(°), z: 확대(1 = 사진 긴 쪽이 네모에 꽉), x, y: 가운데에서 옮긴 정도(네모 크기 1 기준) }
+// 네모(size×size) 안에 보이는 그대로 그려요. 저장할 때도 같은 함수로 그려서 화면과 똑같이 나와요.
+export function paintFrame(g, size, src, st, W = src.width, H = src.height) {
+  const px = (st.z * size) / Math.max(W, H);
+  g.clearRect(0, 0, size, size);
+  g.save();
+  g.translate(size / 2 + st.x * size, size / 2 + st.y * size);
+  g.rotate(((st.rot + st.tilt) * Math.PI) / 180);
+  g.scale(px, px);
+  g.imageSmoothingQuality = "high";
+  g.drawImage(src, -W / 2, -H / 2, W, H);
+  g.restore();
+}
+
+// (x, y)를 deg만큼 돌리기 (canvas처럼 시계 방향)
+export function turn(x, y, deg) {
+  const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  return [x * c - y * s, x * s + y * c];
+}
+
+// 처음 상태: 옷 범위(b)가 네모 가운데에 margin만큼 차게. 옷이 잘리지 않게 여유를 넉넉히 둬요.
+export function fitState(W, H, b, rot = 0, margin = 0.86) {
+  if (!b) return { rot, tilt: 0, z: 0.96, x: 0, y: 0 };
+  const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1, L = Math.max(W, H);
+  const z = (margin * L) / Math.max(bw, bh), px = z / L;   // px: 사진 1픽셀 = 네모의 몇 배
+  const [x, y] = turn((W / 2 - (b.x0 + bw / 2)) * px, (H / 2 - (b.y0 + bh / 2)) * px, rot);
+  return { rot, tilt: 0, z, x, y };
+}
+
+// 그림 주소(dataURL) → canvas
+export async function urlToCanvas(url) {
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const c = mk(img.naturalWidth, img.naturalHeight);
+  c.getContext("2d").drawImage(img, 0, 0);
   return c;
 }
 
@@ -46,6 +94,8 @@ export function onWhite(src, size = 320) {
   g.drawImage(src, (size - src.width * k) / 2, (size - src.height * k) / 2, src.width * k, src.height * k);
   return c;
 }
+
+export { mk };
 
 // 저장용: 긴 쪽 max px, webp(안 되면 png). Firebase 한 칸(1MB) 안에 들어가게 줄여요.
 export function toStored(src, max = 420) {

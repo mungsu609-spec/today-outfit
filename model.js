@@ -22,17 +22,22 @@ export const FEEL = {
 // 기록마다 "딱 맞았을 따뜻함 - 보통 기준"을 구해서, 그 차이를 c + d×(온도-15) 로 맞춰요.
 //  c: 평소에 얼마나 더(덜) 따뜻하게 입어야 하는지,  d: 추운 날·더운 날 차이가 다른 정도
 //  기록이 적으면 0 쪽으로 끌어당겨서(믿을 만큼만 반영) 처음엔 보통 기준과 거의 같아요.
+//  아침·낮·저녁을 따로 누른 날은 시간대마다 점 하나(그 시간대 체감 온도)로 봐요. 하루에 점이 여러 개라 하나씩은 조금 덜 믿어요.
 export function fit(logs, itemsById, today = new Date()) {
   let swx = 0, sw = 0, swxx = 0, swy = 0, swxy = 0, n = 0;
   for (const g of logs) {
-    if (!g.feel || g.T == null) continue;
+    const pts = feelPoints(g);
+    if (!pts.length) continue;
     const list = (g.items || []).map((id) => itemsById[id]).filter(Boolean);
     const W = list.length && list.length === (g.items || []).length ? outfitWarmth(list) : g.W;
     if (W == null) continue;
     const age = (today - new Date(g.date)) / 864e5;
-    const w = Math.pow(0.5, Math.max(0, age) / 60);   // 60일 지난 기록은 절반만 믿어요
-    const x = g.T - 15, y = W + FEEL[g.feel].delta - base(g.T);
-    sw += w; swx += w * x; swxx += w * x * x; swy += w * y; swxy += w * x * y; n++;
+    const w = Math.pow(0.5, Math.max(0, age) / 60) / Math.sqrt(pts.length);   // 60일 지난 기록은 절반만 믿어요
+    for (const [T, feel] of pts) {
+      const x = T - 15, y = W + FEEL[feel].delta - base(T);
+      sw += w; swx += w * x; swxx += w * x * x; swy += w * y; swxy += w * x * y;
+    }
+    n++;
   }
   const lc = 1.5, ld = 400;   // 끌어당기는 힘
   const a = sw + lc, b = swx, c2 = swxx + ld, det = a * c2 - b * b;
@@ -50,6 +55,64 @@ export function dayFeel(hours) {
   const a = hours.map((h) => h.feel);
   const mean = a.reduce((s, x) => s + x, 0) / a.length, min = Math.min(...a), max = Math.max(...a);
   return { T: 0.6 * mean + 0.4 * min, min, max, mean };
+}
+
+// ---------- 아침·낮·저녁 ----------
+export const SLOTS = [
+  { id: "morning", ko: "아침", emoji: "🌅", from: 0, to: 11 },
+  { id: "noon", ko: "낮", emoji: "☀️", from: 12, to: 16 },
+  { id: "evening", ko: "저녁", emoji: "🌙", from: 17, to: 23 },
+];
+
+// 외출 시간대 시간별 날씨 → 시간대별 체감 (외출 시간에 없는 시간대는 빠져요)
+//  한 시간대 안에서는 평균 70% + 가장 추울 때 30%
+export function slotFeels(hours) {
+  return SLOTS.map((s) => {
+    const hs = hours.filter((h) => h.hr >= s.from && h.hr <= s.to);
+    if (!hs.length) return null;
+    const a = hs.map((h) => h.feel), mean = a.reduce((x, y) => x + y, 0) / a.length;
+    return { ...s, start: hs[0].hr, end: hs[hs.length - 1].hr, T: 0.7 * mean + 0.3 * Math.min(...a) };
+  }).filter(Boolean);
+}
+
+// 기록 하나 → [[체감 온도, 느낌], …]  (시간대별로 누른 게 있으면 그것, 없으면 하루 전체)
+export function feelPoints(g) {
+  const pts = Object.entries(g.slots || {}).filter(([k, f]) => FEEL[f] && g.slotT?.[k] != null).map(([k, f]) => [g.slotT[k], f]);
+  if (pts.length) return pts;
+  return g.feel && FEEL[g.feel] && g.T != null ? [[g.T, g.feel]] : [];
+}
+
+// 시간대별 느낌 → 하루 전체 느낌 (목록·그래프에 보여 줄 때)
+export function overallFeel(slots = {}) {
+  const v = Object.values(slots).filter((f) => FEEL[f]).map((f) => (f === "cold" ? 1 : f === "hot" ? -1 : 0));
+  if (!v.length) return null;
+  const m = v.reduce((a, b) => a + b, 0) / v.length;
+  return m >= 0.3 ? "cold" : m <= -0.3 ? "hot" : "good";
+}
+
+const SHORT = { cold: "추울 수 있어요", cool: "살짝 시원", good: "딱 맞아요", warm: "살짝 따뜻", hot: "더울 수 있어요" };
+// 코디 하나를 시간대마다 평가해요. 겉옷이 있으면 "벗으면 나아지는지"도 봐요.
+//  결과: { rows:[{…시간대, cls, word, off}], tip }
+export function evalSlots(list, slots, m) {
+  const W = outfitWarmth(list), outer = list.find((it) => typeOf(it.type).cat === "outer");
+  const rows = slots.map((s) => {
+    const diff = W - target(s.T, m), cls = fitWord(diff)[1];
+    // 겉옷을 벗었을 때 더 맞으면 off: true
+    const d2 = outer ? diff - itemWarmth(outer) : null;
+    const off = outer != null && diff > 0.9 && Math.abs(d2) < Math.abs(diff);
+    return { ...s, diff, cls, word: SHORT[cls], off, offGood: off && Math.abs(d2) <= 0.9 };
+  });
+  const names = (rs) => rs.map((r) => r.ko).join("·");
+  const tips = [];
+  const offs = rows.filter((r) => r.off), on = rows.filter((r) => !r.off);
+  const cold = on.filter((r) => r.cls === "cold" || r.cls === "cool");
+  const hot = on.filter((r) => r.cls === "hot" || r.cls === "warm");
+  if (offs.length && on.length) tips.push(`${names(offs)}엔 겉옷을 벗으면 ${offs.every((r) => r.offGood) ? "딱 좋아요" : "한결 나아요"}`);
+  else if (offs.length) tips.push("겉옷 없이도 괜찮은 날이에요");
+  if (cold.length) tips.push(`${names(cold)}엔 ${cold.some((r) => r.cls === "cold") ? "추울 수 있어요" : "살짝 쌀쌀해요"}${outer ? "" : " — 얇은 겉옷을 챙기면 좋아요"}`);
+  if (hot.length) tips.push(`${names(hot)}엔 ${hot.some((r) => r.cls === "hot") ? "더울 수 있어요" : "살짝 따뜻해요"}`);
+  if (!tips.length) tips.push(`${rows.length > 2 ? "아침부터 저녁까지" : names(rows) + " 모두"} 잘 맞아요`);
+  return { rows, tip: tips.join(" · ") };
 }
 
 // ---------- 옷장에서 고르기 ----------

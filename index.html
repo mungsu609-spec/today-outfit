@@ -162,6 +162,32 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px); transform: translateX(-50%); background: rgba(30,30,30,.92); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 40; max-width: 90vw; text-align: center; pointer-events: none; opacity: 0; transition: opacity .2s; }
 .toast.show { opacity: 1; }
 .skel { color: var(--sub); text-align: center; padding: 24px 0; }
+
+/* 아침·낮·저녁 */
+.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+.slot { background: var(--soft); border-radius: 12px; padding: 8px 4px; text-align: center; font-size: 12px; color: var(--sub); min-width: 0; }
+.slot b { display: block; color: var(--ink); font-size: 14px; }
+.slot .sw { display: block; font-weight: 700; font-size: 13px; margin-top: 2px; }
+.slot .sw.good { color: var(--good); } .slot .sw.cold, .slot .sw.cool { color: var(--cold); } .slot .sw.hot, .slot .sw.warm { color: var(--hot); }
+.slot .off { display: block; font-size: 11px; color: var(--good); font-weight: 600; }
+.slot-tip { font-size: 13px; font-weight: 600; margin: 8px 0 0; }
+.rate-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.rate-row:first-child { border-top: 0; }
+.rate-row .rl { flex: 1; min-width: 0; }
+.rate-row .rl b { display: block; font-size: 15px; }
+.rate-row .rl span { font-size: 12px; }
+.rate-btn { border: 2px solid transparent; background: var(--soft); border-radius: 12px; width: 52px; padding: 4px 0 3px; font-size: 22px; line-height: 1.2; flex: none; }
+.rate-btn small { display: block; font-size: 10px; color: var(--sub); font-weight: 600; }
+.rate-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.rate-btn.on small { color: var(--ink); }
+
+/* 사진 맞추기 */
+.adj-frame { margin: 4px auto 0; border-radius: 16px; overflow: hidden; touch-action: none; background-color: #fff; background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%), linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%); background-size: 16px 16px; background-position: 0 0, 8px 8px; outline: 2px solid var(--accent); outline-offset: -2px; cursor: grab; }
+.adj-frame canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.adj-tools { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 10px; }
+.adj-tools .btn { padding: 10px 4px; font-size: 14px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.edit-photo { display: block; margin: 8px auto 0; }
 </style>
 </head>
 <body>
@@ -230,10 +256,10 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 <script src="config.js"></script>
 <script type="module">
 import { CATS, TYPES, PATTERNS, WARM_KO, typeOf } from "./catalog.js";
-import { fileToCanvas, cutout, onWhite, rotate, toStored, mainColor, COLORS } from "./photo.js";
-import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord } from "./model.js";
+import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
+import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
-const VERSION = "v1";
+const VERSION = "v2";
 const CFG = window.APP_CONFIG || {};
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -400,7 +426,7 @@ function renderHome() {
   if (rec) {
     const [word, cls] = fitWord(rec.W - want);
     body = `<div class="outfit-head"><h2>${picked ? `${who} 입을 옷 ✓` : `${who}의 코디`}</h2><span class="fitword ${cls}">${word}</span></div>
-      <div class="pieces">${rec.items.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></div>`).join("")}</div>`;
+      <div class="pieces">${rec.items.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></div>`).join("")}</div>${slotHtml(rec.items, info)}`;
   } else {
     body = `<div class="outfit-head"><h2>${who}의 코디</h2></div><div class="generic">${genericOutfit(want)}</div>
       <p class="why">옷장에 상의와 하의(또는 원피스)를 넣으면 내 옷으로 골라 줘요.</p>`;
@@ -417,6 +443,29 @@ function renderHome() {
   renderFeel(info, rec, want);
 }
 
+// 아침·낮·저녁마다 이 코디가 맞는지 (시간대가 두 개 이상일 때만)
+function slotHtml(list, info) {
+  const sl = slotFeels(info.hours);
+  if (sl.length < 2) return "";
+  const ev = evalSlots(list, sl, model);
+  return `<div class="slots">${ev.rows.map((r) => `<div class="slot">${r.emoji} ${r.ko}<br>${r.start}~${r.end}시<b>${r1(r.T)}°</b>
+      <span class="sw ${r.off ? (r.offGood ? "good" : r.cls) : r.cls}">${r.off ? "겉옷 벗기" : r.word}</span>${r.off ? `<span class="off">${r.offGood ? "벗으면 딱" : "벗으면 나아요"}</span>` : ""}</div>`).join("")}</div>
+    <p class="slot-tip">${esc(ev.tip)}</p>`;
+}
+
+const rateBtns = (slot, cur) => Object.entries(FEEL).map(([k, f]) => `<button class="rate-btn${cur === k ? " on" : ""}" data-slot="${slot}" data-feel="${k}" aria-label="${f.ko}">${f.emoji}<small>${f.ko.replace("어요", "")}</small></button>`).join("");
+// 시간대별 느낌 줄 (홈·기록 화면 같이 씀)
+function rateRows(sl, slots) {
+  return sl.map((s) => `<div class="rate-row"><div class="rl"><b>${s.emoji} ${s.ko}</b><span class="muted">${s.start != null ? `${s.start}~${s.end}시 · ` : ""}체감 ${r1(s.T)}°</span></div>${rateBtns(s.id, slots[s.id])}</div>`).join("");
+}
+// 한 시간대 느낌을 누르면(같은 걸 다시 누르면 취소) 바뀐 기록
+function withSlot(g, slot, feel, sl) {
+  const slots = { ...(g.slots || {}) };
+  if (slots[slot] === feel) delete slots[slot]; else slots[slot] = feel;
+  const slotT = { ...(g.slotT || {}), ...Object.fromEntries(sl.map((s) => [s.id, +s.T.toFixed(1)])) };
+  return { ...g, slots, slotT, feel: overallFeel(slots), at: Date.now() };
+}
+
 function renderFeel(info, rec, want) {
   const card = $("#feelCard");
   // 오늘: 오늘 어땠는지 / 내일 화면: 숨김. 어제 기록이 남아 있으면 같이 물어봐요.
@@ -424,22 +473,25 @@ function renderFeel(info, rec, want) {
   const y = dateOf(-1), yl = logOf(y);
   const today = logOf(info.date);
   const now = new Date().getHours();
-  let html = `<h2>오늘 입은 옷 어땠어요?</h2><p class="muted" style="margin:4px 0 0">${now < 15 && !today?.feel ? "저녁에 눌러 주면 다음 추천이 더 정확해져요." : "누를 때마다 나에게 맞게 배워요."}</p>
-    <div class="feels">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${today?.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`;
+  const sl = slotFeels(info.hours);
+  let html = `<h2>오늘 입은 옷 어땠어요?</h2><p class="muted" style="margin:4px 0 6px">${now < 15 && !today?.feel ? "아침·낮·저녁마다 따로 눌러 주면 다음 추천이 더 정확해져요." : "누를 때마다 나에게 맞게 배워요. 다시 누르면 취소돼요."}</p>
+    <div>${rateRows(sl, today?.slots || {})}</div>`;
   if (yl?.items?.length && !yl.feel) html += `<p class="muted" style="margin:14px 0 0">어제(${md(y)}) 입은 옷은 어땠어요?</p>
     <div class="feels">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn" data-yfeel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`;
   card.innerHTML = html;
   card.hidden = false;
   card.onclick = async (e) => {
-    const b = e.target.closest("[data-feel],[data-yfeel]");
+    const b = e.target.closest("[data-slot],[data-yfeel]");
     if (!b) return;
     if (b.dataset.yfeel) { await logStore.set(y, { ...yl, feel: b.dataset.yfeel, at: Date.now() }); toast("어제 기록을 저장했어요"); return; }
-    const list = rec?.items || [];
-    await logStore.set(info.date, {
+    const list = rec?.items || [], s = SLOTS.find((x) => x.id === b.dataset.slot);
+    const undo = today?.slots?.[s.id] === b.dataset.feel;
+    await logStore.set(info.date, withSlot({
       ...(today || {}), date: info.date, T: +info.T.toFixed(1), tmin: info.tmin, tmax: info.tmax, want: +want.toFixed(2),
-      items: list.map((x) => x.id), W: rec ? +rec.W.toFixed(2) : +want.toFixed(2), feel: b.dataset.feel, at: Date.now(),
-    });
-    toast(b.dataset.feel === "good" ? "좋아요! 기록했어요 😊" : "기록했어요. 다음 추천부터 반영돼요");
+      items: list.map((x) => x.id), W: rec ? +rec.W.toFixed(2) : +want.toFixed(2),
+    }, s.id, b.dataset.feel, sl));
+    if (undo) { toast(`${s.ko} 기록을 지웠어요`); return; }
+    toast(b.dataset.feel === "good" ? `${s.ko} 딱 좋았군요! 기록했어요 😊` : `${s.ko} 기록했어요. 다음 추천부터 반영돼요`);
   };
 }
 
@@ -529,27 +581,96 @@ $("#fileIn").addEventListener("change", async () => {
   };
   $("#sheetBg").hidden = false; $("#sheetBg").onclick = null; $("#sheet").onclick = null;
   show(0.05);
-  let orig, cut = null, ai = null, color = null;
+  let orig, bg = null, cut = null, ai = null, color = null;
   try {
     orig = await fileToCanvas(file);
     cur = 1; show(0.15, "처음 한 번은 AI 파일을 받느라 1~2분 걸릴 수 있어요");
     const A = await import("./ai.js");
-    const bg = await A.removeBg(orig, (p, t) => show(0.15 + p * 0.35, t));
+    bg = await A.removeBg(orig, (p, t) => show(0.15 + p * 0.35, t));
     cut = cutout(bg);
     color = mainColor(cut);
     cur = 2; show(0.55, "");
     ai = await A.classify(cut, (p, t) => show(0.55 + p * 0.4, t), { onWhite, rotate });
-    cut = rotate(cut, ai.rot);   // 옆으로 누운 옷은 똑바로 세워서 저장
   } catch (err) {
     console.error(err);
     toast("AI가 잘 안 됐어요. 직접 골라 주세요");
   }
-  const photo = toStored(cut || orig), rawPhoto = cut ? toStored(orig) : null;
+  if (!orig) { closeSheet(); return toast("사진을 읽지 못했어요"); }
   const t = ai?.types?.[0];
   let warm = typeOf(t?.id || "tee_s").warm;
   if (ai) warm = Math.min(5, Math.max(1, warm + (ai.thick > 0.75 ? 1 : ai.thick < 0.25 ? -1 : 0)));
-  openEditor(null, { photo, rawPhoto, type: t?.id, warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai });
+  // 배경 지운 사진(잘리지 않은 전체)과 원본을 같이 들고 가서, 사람이 각도·크기를 맞춰요
+  const W = (bg || orig).width, H = (bg || orig).height;
+  const init = bg ? fitState(W, H, bbox(bg, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
+  const adj = { cut: bg, orig, W, H, init, st: { ...init, raw: !bg } };
+  const draft = { type: t?.id, warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai, adj };
+  openAdjust(adj, (photo) => openEditor(null, { ...draft, photo }));
 });
+
+// ---------- 사진 맞추기 ----------
+// adj = { cut: 배경 지운 canvas|null, orig: 원본 canvas, W, H, init: 처음 상태, st: 지금 상태 }
+// 한 손가락: 옮기기 / 두 손가락: 벌리면 확대, 좁히면 축소 / 컴퓨터는 마우스 휠
+// 네모 안에 보이는 그대로 저장돼요. done(사진 주소), cancel이 있으면 '취소' 버튼이 생겨요.
+function openAdjust(adj, done, cancel = null) {
+  const st = { ...adj.st };
+  const F = Math.min(300, $("#sheet").clientWidth - 32 || 300);
+  openSheet(`<div class="sheet-head"><h2>사진 맞추기</h2></div>
+    <p class="muted" style="margin:0 0 10px">한 손가락으로 끌면 옮겨지고, 두 손가락을 벌리거나 좁히면 커지고 작아져요. <b>파란 네모 안</b>에 보이는 그대로 저장돼요.</p>
+    <div class="adj-frame" id="adjBox" style="width:${F}px;height:${F}px"><canvas id="adjCv"></canvas></div>
+    <div class="adj-tools"><button class="btn" data-j="left">↺ 왼쪽</button><button class="btn" data-j="right">↻ 오른쪽</button><button class="btn" data-j="out">－ 작게</button><button class="btn" data-j="in">＋ 크게</button></div>
+    <label class="f">살짝 기울이기 <span id="adjTiltV">${st.tilt}°</span></label>
+    <input type="range" id="adjTilt" min="-45" max="45" step="1" value="${st.tilt}">
+    ${adj.cut ? `<label class="f">사진</label><div class="chips"><button class="chip${st.raw ? "" : " on"}" data-raw="0">배경 지운 사진</button><button class="chip${st.raw ? " on" : ""}" data-raw="1">원본 사진 (배경이 이상하면)</button></div>` : ""}
+    <div class="row" style="margin-top:16px"><button class="btn ghost" data-j="reset">처음대로</button><span class="spacer"></span>${cancel ? `<button class="btn" data-j="cancel">취소</button>` : ""}<button class="btn primary" data-j="ok">이대로 쓰기</button></div>`, (e) => {
+    const r = e.target.closest("[data-raw]");
+    if (r) { st.raw = r.dataset.raw === "1"; $$("[data-raw]").forEach((x) => x.classList.toggle("on", x === r)); paint(); return; }
+    const j = e.target.closest("[data-j]")?.dataset.j;
+    if (j === "left" || j === "right") spin(j === "left" ? -90 : 90, true);
+    if (j === "in" || j === "out") zoom(j === "in" ? 1.15 : 1 / 1.15, 0, 0);
+    if (j === "reset") { Object.assign(st, adj.init); $("#adjTilt").value = st.tilt; $("#adjTiltV").textContent = st.tilt + "°"; paint(); }
+    if (j === "cancel") cancel();
+    if (j === "ok") {
+      const c = mk(420, 420);
+      paintFrame(c.getContext("2d"), 420, src(), st, adj.W, adj.H);
+      adj.st = { ...st };
+      done(toStored(c, 420));
+    }
+  }, true);
+  const cv = $("#adjCv"), box = $("#adjBox"), dpr = Math.min(3, window.devicePixelRatio || 1);
+  cv.width = cv.height = Math.round(F * dpr);
+  const g = cv.getContext("2d");
+  const src = () => (st.raw || !adj.cut ? adj.orig : adj.cut);
+  let raf = 0;
+  const paint = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => paintFrame(g, cv.width, src(), st, adj.W, adj.H)); };
+  // 네모 가운데를 축으로 돌리기
+  const spin = (d, quarter = false) => { [st.x, st.y] = turn(st.x, st.y, d); if (quarter) st.rot = (st.rot + d + 360) % 360; else st.tilt += d; paint(); };
+  // (mx, my)(네모 가운데 기준, 네모 크기 1) 자리를 고정하고 k배
+  const zoom = (k, mx, my) => {
+    const z = Math.min(12, Math.max(0.15, st.z * k)); k = z / st.z;
+    st.x = mx + (st.x - mx) * k; st.y = my + (st.y - my) * k; st.z = z; paint();
+  };
+  $("#adjTilt").oninput = () => { const v = +$("#adjTilt").value; spin(v - st.tilt); $("#adjTiltV").textContent = v + "°"; };
+  // 손가락 따라가기
+  const pts = new Map();
+  const at = (e) => { const r = box.getBoundingClientRect(); return [(e.clientX - r.left) / r.width - 0.5, (e.clientY - r.top) / r.height - 0.5]; };
+  box.addEventListener("pointerdown", (e) => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, at(e)); });
+  box.addEventListener("pointermove", (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const prev = pts.get(e.pointerId), now = at(e);
+    pts.set(e.pointerId, now);
+    if (pts.size === 1) { st.x += now[0] - prev[0]; st.y += now[1] - prev[1]; paint(); return; }
+    const other = [...pts].find(([id]) => id !== e.pointerId)[1];
+    const d0 = Math.hypot(prev[0] - other[0], prev[1] - other[1]), d1 = Math.hypot(now[0] - other[0], now[1] - other[1]);
+    const m0 = [(prev[0] + other[0]) / 2, (prev[1] + other[1]) / 2], m1 = [(now[0] + other[0]) / 2, (now[1] + other[1]) / 2];
+    st.x += m1[0] - m0[0]; st.y += m1[1] - m0[1];   // 두 손가락 가운데가 움직인 만큼 옮기고
+    if (d0 > 0.01) zoom(d1 / d0, m1[0], m1[1]); else paint();   // 벌어진 만큼 확대
+  });
+  const up = (e) => pts.delete(e.pointerId);
+  box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
+  box.addEventListener("wheel", (e) => { e.preventDefault(); const [mx, my] = at(e); zoom(Math.exp(-e.deltaY * 0.0015), mx, my); }, { passive: false });
+  box.addEventListener("gesturestart", (e) => e.preventDefault());   // 아이폰: 화면 전체가 확대되지 않게
+  paint();
+}
 
 function autoName(it) { return `${it.color && it.color !== "여러색" ? it.color + " " : ""}${typeOf(it.type).ko}`; }
 
@@ -557,14 +678,15 @@ function openEditor(item, draft = null) {
   const isNew = !item;
   const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", memo: "", photo: draft?.photo || null, away: false };
   if (!it.name) it.name = autoName(it);
-  let nameTouched = !isNew, useRaw = false;
+  let nameTouched = !isNew;
+  let adj = draft?.adj || null;   // 사진 맞추기 상태 (예전 옷은 누를 때 저장된 사진으로 만들어요)
   const ai = draft?.ai;
   const typeOpts = Object.entries(CATS).map(([c, cat]) => `<optgroup label="${cat.ko}">${TYPES.filter((t) => t.cat === c).map((t) => `<option value="${t.id}">${t.ko}</option>`).join("")}</optgroup>`).join("");
   const draw = () => {
     const sug = ai ? ai.types.slice(0, 3).filter((x) => x.p >= 0.05) : [];
     openSheet(`<div class="sheet-head"><h2>${isNew ? "새 옷" : "옷 고치기"}</h2><button class="btn ghost" data-x="close">닫기</button></div>
-      <div class="preview">${it.photo ? `<img src="${(useRaw && draft?.rawPhoto) || it.photo}" alt="">` : CAT_EMOJI[typeOf(it.type).cat]}</div>
-      ${draft?.rawPhoto ? `<label class="check" style="justify-content:center"><input type="checkbox" id="eRaw" ${useRaw ? "checked" : ""}>배경이 이상하면: 원본 사진 쓰기</label>` : ""}
+      <div class="preview">${it.photo ? `<img src="${it.photo}" alt="">` : CAT_EMOJI[typeOf(it.type).cat]}</div>
+      ${it.photo ? `<button class="btn edit-photo" data-x="adjust">📐 각도·크기 맞추기</button>` : ""}
       <label class="f">종류${ai ? `<span class="ai-tag">AI 추천</span>` : ""}</label>
       ${sug.length ? `<div class="ai-sugg">${sug.map((s) => `<button class="chip${it.type === s.id ? " on" : ""}" data-type="${s.id}">${typeOf(s.id).ko}<small>${Math.round(s.p * 100)}%</small></button>`).join("")}</div><div style="height:8px"></div>` : ""}
       <select id="eType">${typeOpts}</select>
@@ -584,7 +706,6 @@ function openEditor(item, draft = null) {
     $("#eName").oninput = () => { it.name = $("#eName").value; nameTouched = true; };
     $("#eMemo").oninput = () => { it.memo = $("#eMemo").value; };
     $("#eAway").onchange = () => { it.away = $("#eAway").checked; };
-    if ($("#eRaw")) $("#eRaw").onchange = () => { useRaw = $("#eRaw").checked; redraw(); };
   };
   const redraw = () => { const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; };
   const rename = () => { if (!nameTouched) it.name = autoName(it); };
@@ -598,11 +719,15 @@ function openEditor(item, draft = null) {
     if (b.dataset.pat) { it.pattern = b.dataset.pat; redraw(); }
     const x = b.dataset.x;
     if (x === "close") closeSheet();
+    if (x === "adjust") {
+      if (!adj) { const c = await urlToCanvas(it.photo); adj = { cut: null, orig: c, W: c.width, H: c.height, init: { rot: 0, tilt: 0, z: 1, x: 0, y: 0 } }; adj.st = { ...adj.init, raw: true }; }
+      openAdjust(adj, (photo) => { it.photo = photo; draw(); }, () => draw());
+    }
     if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
       const data = { type: it.type, warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
-        photo: (useRaw && draft?.rawPhoto) || it.photo || null, createdAt: it.createdAt || Date.now() };
+        photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }
       catch (err) { console.error(err); b.disabled = false; toast("저장하지 못했어요"); }
@@ -612,6 +737,7 @@ function openEditor(item, draft = null) {
 }
 
 // ---------- 기록 ----------
+const slotText = (g) => SLOTS.filter((s) => FEEL[g.slots?.[s.id]]).map((s) => `${s.ko} ${FEEL[g.slots[s.id]].emoji}`).join(" ");
 function renderLogs() {
   const done = logs.filter((g) => g.feel).sort((a, b) => b.id.localeCompare(a.id));
   const n = model.n;
@@ -628,32 +754,37 @@ function renderLogs() {
   $("#analysisCard").innerHTML = `<h2>나의 체감</h2>${txt}${chartSvg(done)}`;
   $("#logList").innerHTML = `<h2 style="margin-bottom:6px">날짜별 기록</h2>` + (done.length ? done.map((g) => {
     const list = (g.items || []).map((id) => byId[id]).filter(Boolean);
-    return `<button class="log" data-log="${g.id}"><span class="em">${FEEL[g.feel].emoji}</span><span><div class="dt">${md(g.id)}</div><div class="muted">체감 ${r1(g.T)}° · ${FEEL[g.feel].ko}</div></span>
+    return `<button class="log" data-log="${g.id}"><span class="em">${FEEL[g.feel].emoji}</span><span><div class="dt">${md(g.id)}</div><div class="muted">체감 ${r1(g.T)}° · ${slotText(g) || FEEL[g.feel].ko}</div></span>
       <span class="mini">${list.slice(0, 4).map((it) => `<span class="ph">${phHtml(it)}</span>`).join("")}</span></button>`;
   }).join("") : `<p class="muted">아직 기록이 없어요.</p>`);
 }
-$("#logList").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-log]");
-  if (!b) return;
-  const g = logOf(b.dataset.log);
+$("#logList").addEventListener("click", (e) => { const b = e.target.closest("[data-log]"); if (b) openLog(b.dataset.log); });
+function openLog(id) {
+  const g = logOf(id);
+  if (!g) return closeSheet();
+  // 시간대 온도를 기억하는 기록은 아침·낮·저녁 따로, 예전 기록은 하루 전체로
+  const sl = SLOTS.filter((s) => g.slotT?.[s.id] != null).map((s) => ({ ...s, T: g.slotT[s.id] }));
   openSheet(`<div class="sheet-head"><h2>${md(g.id)}</h2><button class="btn ghost" data-x="close">닫기</button></div>
     <p class="muted">체감 ${r1(g.T)}° (최저 ${r1(g.tmin)}° 최고 ${r1(g.tmax)}°)</p>
     <div class="pieces">${(g.items || []).map((id) => byId[id]).filter(Boolean).map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></div>`).join("") || `<p class="muted">입은 옷 정보 없음</p>`}</div>
     <label class="f">느낌 바꾸기</label>
-    <div class="feels" style="margin-top:0">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${g.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>
+    ${sl.length ? `<div>${rateRows(sl, g.slots || {})}</div>`
+      : `<div class="feels" style="margin-top:0">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${g.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`}
     <button class="btn danger block" style="margin-top:14px" data-x="del">이 기록 지우기</button>`, async (e) => {
+    const r = e.target.closest("[data-slot]");
+    if (r) { await logStore.set(g.id, withSlot(g, r.dataset.slot, r.dataset.feel, sl)); openLog(g.id); return; }
     const f = e.target.closest("[data-feel]");
     if (f) { await logStore.set(g.id, { ...g, feel: f.dataset.feel }); closeSheet(); toast("바꿨어요"); }
     const x = e.target.closest("[data-x]")?.dataset.x;
     if (x === "close") closeSheet();
     if (x === "del" && confirm("이 기록을 지울까요?")) { await logStore.remove(g.id); closeSheet(); }
   });
-});
+}
 
 // 그래프: 가로 = 체감 온도, 세로 = 입은 옷 따뜻함
 function chartSvg(done) {
   const W = 320, H = 200, L = 30, R = 10, T = 10, B = 26;
-  const ts = done.map((g) => g.T);
+  const ts = done.flatMap((g) => feelPoints(g).map((p) => p[0]));
   const x0 = Math.min(-5, ...ts.map((t) => Math.floor(t / 5) * 5)), x1 = Math.max(30, ...ts.map((t) => Math.ceil(t / 5) * 5));
   const y1 = 22;
   const X = (t) => L + ((t - x0) / (x1 - x0)) * (W - L - R), Y = (w) => T + (1 - w / y1) * (H - T - B);
@@ -668,12 +799,13 @@ function chartSvg(done) {
     const list = (d.items || []).map((id) => byId[id]).filter(Boolean);
     const w = list.length === (d.items || []).length && list.length ? outfitWarmth(list) : d.W;
     if (w == null) continue;
-    g += `<circle cx="${X(d.T).toFixed(1)}" cy="${Y(Math.min(y1, w)).toFixed(1)}" r="5" fill="${col[d.feel]}" stroke="var(--card)" stroke-width="1.5"/>`;
+    const pts = feelPoints(d);
+    for (const [t, f] of pts) g += `<circle cx="${X(t).toFixed(1)}" cy="${Y(Math.min(y1, w)).toFixed(1)}" r="${pts.length > 1 ? 4 : 5}" fill="${col[f]}" stroke="var(--card)" stroke-width="1.5"/>`;
   }
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="체감 온도별 입은 옷 따뜻함">${g}</svg>
     <div class="legend"><span><i class="line" style="background:var(--sub)"></i>보통 사람 기준</span>${model.n >= 3 ? `<span><i class="line" style="background:var(--accent)"></i>나에게 맞춘 기준</span>` : ""}
     <span><i style="background:var(--cold)"></i>추웠어요</span><span><i style="background:var(--good)"></i>딱 좋았어요</span><span><i style="background:var(--hot)"></i>더웠어요</span></div>
-    <p class="muted" style="margin:8px 0 0">점 하나가 하루예요. 파란 점(추웠던 날)이 많으면 선이 위로 올라가서 더 따뜻하게 추천해요.</p>`;
+    <p class="muted" style="margin:8px 0 0">점 하나가 하루예요(아침·낮·저녁을 따로 누른 날은 시간대마다 하나). 파란 점(추웠던 날)이 많으면 선이 위로 올라가서 더 따뜻하게 추천해요.</p>`;
 }
 
 // ---------- 설정 ----------
