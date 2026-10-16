@@ -52,7 +52,7 @@ h2 { font-size: 17px; margin: 0; letter-spacing: -.2px; }
 .chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 2px; }
 .chips.scroll::-webkit-scrollbar { display: none; }
 .chips.scroll .chip { flex: none; }
-input[type=text], input[type=search], select, textarea { width: 100%; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 12px; font-size: 16px; }
+input[type=text], input[type=search], input[type=date], select, textarea { width: 100%; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 12px; font-size: 16px; }
 label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px; font-weight: 600; }
 
 /* 상단 */
@@ -259,7 +259,7 @@ import { CATS, TYPES, PATTERNS, WARM_KO, typeOf } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
-const VERSION = "v3";
+const VERSION = "v4";
 const CFG = window.APP_CONFIG || {};
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -370,19 +370,20 @@ async function loadWeather(force = false) {
 }
 
 // 그날 외출 시간대 정보
-function dayInfo(d) {
-  if (!wx) return null;
-  const date = dateOf(d), h = wx.hourly, hours = [];
+function dayInfo(d) { return wx ? hoursInfo(wx, dateOf(d)) : null; }
+// 날씨 자료(Open-Meteo) + 날짜 → 그날 외출 시간대 정보 (지난 날 기록에도 써요)
+function hoursInfo(data, date) {
+  const h = data.hourly, hours = [];
   h.time.forEach((t, i) => {
     if (!t.startsWith(date)) return;
     const hr = +t.slice(11, 13);
-    if (hr < S.start || hr > S.end) return;
-    hours.push({ hr, temp: h.temperature_2m[i], feel: h.apparent_temperature[i], pop: h.precipitation_probability[i] ?? 0, rain: h.precipitation[i] ?? 0, code: h.weather_code[i], wind: h.wind_speed_10m[i] });
+    if (hr < S.start || hr > S.end || h.apparent_temperature[i] == null) return;
+    hours.push({ hr, temp: h.temperature_2m[i], feel: h.apparent_temperature[i], pop: h.precipitation_probability?.[i] ?? 0, rain: h.precipitation?.[i] ?? 0, code: h.weather_code?.[i] ?? 0, wind: h.wind_speed_10m?.[i] ?? 0 });
   });
   if (!hours.length) return null;
   const f = dayFeel(hours);
-  const di = wx.daily.time.indexOf(date);
-  const code = di >= 0 ? wx.daily.weather_code[di] : hours[0].code;
+  const di = data.daily?.time?.indexOf(date) ?? -1;
+  const code = di >= 0 ? data.daily.weather_code[di] : hours[0].code;
   return { date, hours, ...f, code, pop: Math.max(...hours.map((x) => x.pop)), rainSum: hours.reduce((s, x) => s + x.rain, 0), wind: Math.max(...hours.map((x) => x.wind)),
     tmin: Math.min(...hours.map((x) => x.temp)), tmax: Math.max(...hours.map((x) => x.temp)) };
 }
@@ -754,13 +755,19 @@ function renderLogs() {
       <p class="muted">추웠어요 ${cnt("cold")} · 딱 좋았어요 ${cnt("good")} · 더웠어요 ${cnt("hot")}</p>`;
   }
   $("#analysisCard").innerHTML = `<h2>나의 체감</h2>${txt}${chartSvg(done)}`;
-  $("#logList").innerHTML = `<h2 style="margin-bottom:6px">날짜별 기록</h2>` + (done.length ? done.map((g) => {
+  // 느낌을 안 누른 지난 날도 입은 옷이 있으면 보여 줘요 (오늘 것은 홈에서)
+  const shown = logs.filter((g) => g.feel || (g.items?.length && g.id < dateOf(0))).sort((a, b) => b.id.localeCompare(a.id));
+  $("#logList").innerHTML = `<div class="row" style="margin-bottom:6px"><h2>날짜별 기록</h2><span class="spacer"></span><button class="btn" data-past>＋ 지난 날 기록</button></div>` + (shown.length ? shown.map((g) => {
     const list = (g.items || []).map((id) => byId[id]).filter(Boolean);
-    return `<button class="log" data-log="${g.id}"><span class="em">${FEEL[g.feel].emoji}</span><span><div class="dt">${md(g.id)}</div><div class="muted">체감 ${r1(g.T)}° · ${slotText(g) || FEEL[g.feel].ko}</div></span>
+    return `<button class="log" data-log="${g.id}"><span class="em">${g.feel ? FEEL[g.feel].emoji : "📝"}</span><span><div class="dt">${md(g.id)}</div><div class="muted">체감 ${r1(g.T)}° · ${slotText(g) || (g.feel ? FEEL[g.feel].ko : "느낌을 아직 안 눌렀어요")}</div></span>
       <span class="mini">${list.slice(0, 4).map((it) => `<span class="ph">${phHtml(it)}</span>`).join("")}</span></button>`;
-  }).join("") : `<p class="muted">아직 기록이 없어요.</p>`);
+  }).join("") : `<p class="muted">아직 기록이 없어요. 지난 날 입었던 옷도 <b>＋ 지난 날 기록</b>으로 넣을 수 있어요.</p>`);
 }
-$("#logList").addEventListener("click", (e) => { const b = e.target.closest("[data-log]"); if (b) openLog(b.dataset.log); });
+$("#logList").addEventListener("click", (e) => {
+  if (e.target.closest("[data-past]")) return openPast();
+  const b = e.target.closest("[data-log]");
+  if (b) openLog(b.dataset.log);
+});
 function openLog(id) {
   const g = logOf(id);
   if (!g) return closeSheet();
@@ -772,15 +779,100 @@ function openLog(id) {
     <label class="f">느낌 바꾸기</label>
     ${sl.length ? `<div>${rateRows(sl, g.slots || {})}</div>`
       : `<div class="feels" style="margin-top:0">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${g.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`}
-    <button class="btn danger block" style="margin-top:14px" data-x="del">이 기록 지우기</button>`, async (e) => {
+    <button class="btn block" style="margin-top:14px" data-x="edit">✏️ 입은 옷·날씨 고치기</button>
+    <button class="btn danger block" style="margin-top:8px" data-x="del">이 기록 지우기</button>`, async (e) => {
     const r = e.target.closest("[data-slot]");
     if (r) { await logStore.set(g.id, withSlot(g, r.dataset.slot, r.dataset.feel, sl)); openLog(g.id); return; }
     const f = e.target.closest("[data-feel]");
     if (f) { await logStore.set(g.id, { ...g, feel: f.dataset.feel }); closeSheet(); toast("바꿨어요"); }
     const x = e.target.closest("[data-x]")?.dataset.x;
     if (x === "close") closeSheet();
+    if (x === "edit") openPast(g.id);
     if (x === "del" && confirm("이 기록을 지울까요?")) { await logStore.remove(g.id); closeSheet(); }
   });
+}
+
+// ---------- 지난 날 기록 ----------
+// 날짜를 고르면 그날 날씨를 받아 오고, 입은 옷과 느낌(아침·낮·저녁)을 골라서 저장해요.
+const pastWx = {};   // 한 번 받은 날씨는 다시 안 받아요
+async function pastWeather(date) {
+  const p = S.place.mode === "gps" ? (ls.get("wx.lastPos", null) || DEFAULT_PLACE) : S.place;
+  const key = `${date}|${p.lat}|${p.lon}`;
+  if (pastWx[key]) return pastWx[key];
+  const q = `latitude=${p.lat}&longitude=${p.lon}&hourly=temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&daily=weather_code&start_date=${date}&end_date=${date}&timezone=auto&wind_speed_unit=ms`;
+  // 최근 석 달쯤은 예보 서버에, 그보다 옛날은 기록 보관 서버에 있어요
+  for (const host of ["https://api.open-meteo.com/v1/forecast", "https://archive-api.open-meteo.com/v1/archive"]) {
+    try {
+      const r = await fetch(`${host}?${q}`);
+      if (!r.ok) continue;
+      const data = await r.json();
+      if (data.hourly?.apparent_temperature?.some((x) => x != null)) return (pastWx[key] = { data, place: p.name || "현재 위치" });
+    } catch {}
+  }
+  return null;
+}
+
+function openPast(date = dateOf(-1)) {
+  const st = { date };
+  const reset = () => { const g = logOf(st.date); st.old = g; st.sel = new Set(g?.items || []); st.slots = { ...(g?.slots || {}) }; st.feel = g?.feel || null; st.manualT = g?.T ?? ""; };
+  const load = async () => {
+    st.info = undefined; draw();   // undefined = 불러오는 중
+    const d = st.date, w = await pastWeather(d);
+    if (st.date !== d || $("#pastDate") == null) return;   // 그사이 날짜를 바꿨거나 창을 닫았으면 무시
+    st.info = w ? hoursInfo(w.data, d) : null; st.place = w?.place; draw();
+  };
+  const draw = () => {
+    const y = $("#sheet").scrollTop, info = st.info, sl = info ? slotFeels(info.hours) : [];
+    const list = [...st.sel].map((id) => byId[id]).filter(Boolean);
+    const T = info ? info.T : parseFloat(st.manualT);
+    const fw = list.length && isFinite(T) ? fitWord(outfitWarmth(list) - target(T, model)) : null;
+    const wxHtml = info === undefined ? `<div class="skel">그날 날씨 불러오는 중…</div>`
+      : info ? `<div class="wx-main"><div class="wx-icon">${WCODE(info.code)[0]}</div><div><div class="wx-feel">${r1(info.T)}°<small>그날 체감</small></div>
+          <div class="muted">${WCODE(info.code)[1]} · 최저 ${r1(info.tmin)}° 최고 ${r1(info.tmax)}° · 📍${esc(st.place)}</div></div></div>${list.length ? slotHtml(list, info) : ""}`
+      : `<p class="muted" style="margin:0 0 6px">그날 날씨를 못 불러왔어요(인터넷 확인). 그날 체감 온도를 직접 넣어 주세요.</p><input type="text" inputmode="decimal" id="pastT" value="${esc(st.manualT)}" placeholder="예: 12">`;
+    const rate = sl.length ? `<div>${rateRows(sl, st.slots)}</div>`
+      : `<div class="feels" style="margin-top:0">${Object.entries(FEEL).map(([k, f]) => `<button class="feel-btn${st.feel === k ? " on" : ""}" data-feel="${k}"><span>${f.emoji}</span>${f.ko}</button>`).join("")}</div>`;
+    openSheet(`<div class="sheet-head"><h2>지난 날 기록</h2><button class="btn ghost" data-x="close">닫기</button></div>
+      <label class="f" style="margin-top:0">날짜</label><input type="date" id="pastDate" value="${st.date}" max="${dateOf(-1)}" min="2000-01-01">
+      ${st.old ? `<p class="muted" style="margin:6px 0 0">이 날 기록이 이미 있어요. 고쳐서 저장하면 바뀌어요.</p>` : ""}
+      <div class="card" style="margin:12px 0 0">${wxHtml}</div>
+      <div class="outfit-head" style="margin:16px 0 0"><h2>입은 옷</h2>${fw ? `<span class="fitword ${fw[1]}">${fw[0]}</span>` : ""}</div>
+      ${items.length ? Object.entries(CATS).map(([c, cat]) => { const l = items.filter((it) => typeOf(it.type).cat === c); return l.length ? `<label class="f">${cat.ko}</label><div class="pick-grid">${l.map((it) => `<button class="pick${st.sel.has(it.id) ? " on" : ""}" data-id="${it.id}"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></button>`).join("")}</div>` : ""; }).join("") : `<p class="muted">옷장에 옷이 없어요. 옷장에서 먼저 옷을 넣어 주세요.</p>`}
+      <label class="f">어땠어요?</label>${rate}
+      <div class="row" style="margin-top:16px"><button class="btn" data-x="close">취소</button><button class="btn primary spacer" data-x="save" ${info === undefined ? "disabled" : ""}>저장</button></div>`, onClick, true);
+    $("#sheet").scrollTop = y;
+    $("#pastDate").onchange = () => {
+      const v = $("#pastDate").value;
+      if (!v || v > dateOf(-1)) { $("#pastDate").value = st.date; return toast("어제까지의 날짜를 골라 주세요"); }
+      st.date = v; reset(); load();
+    };
+    if ($("#pastT")) $("#pastT").oninput = () => { st.manualT = $("#pastT").value; };
+  };
+  async function onClick(e) {
+    const p = e.target.closest("[data-id]");
+    if (p) { st.sel.has(p.dataset.id) ? st.sel.delete(p.dataset.id) : st.sel.add(p.dataset.id); return draw(); }
+    const r = e.target.closest("[data-slot]");
+    if (r) { st.slots[r.dataset.slot] === r.dataset.feel ? delete st.slots[r.dataset.slot] : (st.slots[r.dataset.slot] = r.dataset.feel); return draw(); }
+    const f = e.target.closest("[data-feel]");
+    if (f) { st.feel = st.feel === f.dataset.feel ? null : f.dataset.feel; return draw(); }
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") closeSheet();
+    if (x === "save") {
+      const info = st.info, T = info ? info.T : parseFloat(String(st.manualT).replace(",", "."));
+      if (!isFinite(T)) return toast("그날 체감 온도를 넣어 주세요");
+      const sl = info ? slotFeels(info.hours) : [];
+      const feel = sl.length ? overallFeel(st.slots) : st.feel;
+      const list = [...st.sel].map((id) => byId[id]).filter(Boolean);
+      if (!list.length && !feel) return toast("입은 옷이나 느낌을 골라 주세요");
+      const want = target(T, model);
+      const rec = { ...(st.old || {}), date: st.date, T: +T.toFixed(1), tmin: info ? info.tmin : T, tmax: info ? info.tmax : T, want: +want.toFixed(2),
+        items: list.map((x) => x.id), W: +(list.length ? outfitWarmth(list) : want).toFixed(2), feel: feel || null, at: Date.now(), past: true,
+        slots: sl.length ? st.slots : {}, slotT: sl.length ? Object.fromEntries(sl.map((s) => [s.id, +s.T.toFixed(1)])) : {} };
+      try { await logStore.set(st.date, rec); closeSheet(); toast(`${md(st.date)} 기록을 저장했어요${feel ? "" : " (느낌을 누르면 추천에 반영돼요)"}`); }
+      catch (err) { console.error(err); toast("저장하지 못했어요"); }
+    }
+  }
+  reset(); load();
 }
 
 // 그래프: 가로 = 체감 온도, 세로 = 입은 옷 따뜻함
