@@ -76,7 +76,62 @@ export const LEN_SWAP = { top: { sleeveless: "sleeveless", short: "tee_s", long:
 
 export const WARM_KO = ["", "아주 얇음", "얇음", "보통", "두꺼움", "아주 두꺼움"];
 
+// 비침: 비치는 옷은 바람이 잘 통해서 조금 덜 따뜻해요 (두께에서 adj만큼)
+export const SHEER = [
+  { id: "none", ko: "안 비침", adj: 0 },
+  { id: "some", ko: "살짝 비침", adj: -0.3 },
+  { id: "much", ko: "많이 비침", adj: -0.6 },
+];
+export const sheerAdj = (it) => SHEER.find((x) => x.id === it.sheer)?.adj || 0;
+// 비침은 상의·겉옷·하의·원피스, 이너 필요는 상의·하의·원피스만 골라요
+export const hasSheer = (type) => ["top", "outer", "bottom", "dress"].includes(typeOf(type).cat);
+export const hasInner = (type) => ["top", "bottom", "dress"].includes(typeOf(type).cat);
+
+// 색 (옷장 색 고르기 순서대로). 여러색은 맨 끝.
+export const COLORS = {
+  검정: "#222", 차콜: "#3d3f45", 회색: "#999", 연회색: "#c4c5c8", 흰색: "#fff", 아이보리: "#f6f0dc",
+  베이지: "#e3d3b5", 카멜: "#b8864b", 갈색: "#7a5232", 카키: "#6b6b3a", 올리브: "#5f6f2e",
+  초록: "#3f9a5a", 민트: "#9fe0c9", 하늘색: "#8cc7ef", 연청: "#8fb0d6", 진청: "#2f4f7f", 파랑: "#2f6fd6", 네이비: "#1f2d4d",
+  라벤더: "#c6b5e8", 보라: "#8a5cc7", 분홍: "#f2a2b8", 코랄: "#f4846c", 빨강: "#d33", 와인: "#6e1f2f",
+  주황: "#f08a3c", 머스타드: "#d2a227", 노랑: "#f2d24b",
+  여러색: "conic-gradient(#e44,#fd4,#4c6,#48f,#a5d,#e44)",
+};
+// 색의 밝기 0(검정)~1(흰색). 모르는 색·여러색은 0.6
+export function colorLum(name) {
+  const v = COLORS[name];
+  if (!v || !v.startsWith("#")) return 0.6;
+  const h = v.length === 4 ? [...v.slice(1)].map((c) => c + c) : [v.slice(1, 3), v.slice(3, 5), v.slice(5, 7)];
+  const [r, g, b] = h.map((x) => parseInt(x, 16) / 255);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
 export const typeOf = (id) => TYPES.find((t) => t.id === id) || TYPES[0];
+
+// ---------- 이너·겉옷 대용 ----------
+// 이너로 입을 수 있는 옷: 안 비치는 나시·반팔 티셔츠
+export const canInner = (it) => ["sleeveless", "tee_s"].includes(typeOf(it.type).id) && !it.inner && (it.sheer || "none") === "none";
+// 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신 입을 수 있어요 (이너가 필요할 만큼 비치는 셔츠는 빼요)
+export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && !it.inner;
+export const SHIRT_BASE = ["tee_s", "tee_l", "sleeveless"];   // 셔츠를 위에 걸칠 수 있는 상의
+
+// 코디 하나에서 누가 겉옷이고 누가 이너인지 알아내요 (추천·직접 고르기·기록 모두 같은 방법)
+//  outer: 겉옷(없으면 티셔츠 위에 걸친 셔츠), inner: 비치는 옷 안에 입은 나시·반팔,
+//  noInner: 이너가 필요한데 없는 상의·원피스, bottomInner: 속바지·속치마가 필요한 하의
+export function layers(list) {
+  const cat = (it) => typeOf(it.type).cat;
+  const tops = list.filter((it) => cat(it) === "top");
+  const needer = list.find((it) => it.inner && (cat(it) === "top" || cat(it) === "dress"));
+  let inner = null;
+  if (needer) inner = tops.filter((x) => x !== needer && canInner(x)).sort((a, b) => (typeOf(a.type).id === "sleeveless" ? 0 : 1) - (typeOf(b.type).id === "sleeveless" ? 0 : 1))[0] || null;
+  let outer = list.find((it) => cat(it) === "outer") || null, shirtOuter = false;
+  if (!outer) {
+    const rest = tops.filter((x) => x !== inner);
+    const shirt = [...rest].reverse().find(canShirtOuter);
+    const under = rest.filter((x) => x !== shirt);
+    if (shirt && (under.length ? under.every((x) => SHIRT_BASE.includes(typeOf(x.type).id)) : list.some((x) => cat(x) === "dress"))) { outer = shirt; shirtOuter = true; }
+  }
+  return { outer, shirtOuter, inner, noInner: needer && !inner ? needer : null, bottomInner: list.filter((it) => it.inner && cat(it) === "bottom") };
+}
 
 // 이 종류가 어떤 길이를 갖는지: "sleeve" | "leg" | null
 export const lenKind = (type) => { const c = typeOf(type).cat; return c === "bottom" ? "leg" : c === "top" || c === "outer" || c === "dress" ? "sleeve" : null; };

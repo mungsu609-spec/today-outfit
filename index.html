@@ -87,6 +87,8 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .piece { text-align: center; font-size: 12px; color: var(--sub); min-width: 0; }
 .piece .ph { aspect-ratio: 1; }
 .piece div.nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.piece .role { display: inline-block; font-size: 10.5px; font-weight: 700; color: var(--accent); background: var(--accent-soft); padding: 0 6px; border-radius: 6px; }
+.layer-note { font-size: 13px; margin: 8px 0 0; color: var(--sub); }
 .ph { background: var(--thumb); border-radius: 14px; display: grid; place-items: center; overflow: hidden; font-size: 34px; }
 .ph img { width: 88%; height: 88%; object-fit: contain; }
 .generic { background: var(--soft); border-radius: 14px; padding: 12px 14px; font-weight: 600; }
@@ -255,7 +257,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 <script src="config.js"></script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
@@ -419,7 +421,7 @@ function renderHome() {
   // 고른 옷이 있으면 그것, 없으면 추천
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
-  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + (x.warm || "") + (x.away ? 1 : 0)).join()}`;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}`;
   const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
   if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
@@ -428,7 +430,7 @@ function renderHome() {
   if (rec) {
     const [word, cls] = fitWord(rec.W - want);
     body = `<div class="outfit-head"><h2>${picked ? `${who} 입을 옷 ✓` : `${who}의 코디`}</h2><span class="fitword ${cls}">${word}</span></div>
-      <div class="pieces">${rec.items.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div></div>`).join("")}</div>${slotHtml(rec.items, info)}`;
+      ${piecesHtml(rec.items)}${slotHtml(rec.items, info)}`;
   } else {
     body = `<div class="outfit-head"><h2>${who}의 코디</h2></div><div class="generic">${genericOutfit(want)}</div>
       <p class="why">옷장에 상의와 하의(또는 원피스)를 넣으면 내 옷으로 골라 줘요.</p>`;
@@ -444,6 +446,17 @@ function renderHome() {
     : `${recs.length > 1 ? `<button class="btn" data-a="next">↻ 다른 코디</button>` : ""}${items.length ? `<button class="btn" data-a="choose">직접 고르기</button>` : `<button class="btn" data-a="closet">옷 넣기</button>`}${rec ? `<button class="btn primary" data-a="wear">이걸로 입을래요</button>` : ""}`;
   $("#outfitCard").innerHTML = `${body}<p class="why">${why}${gapWhy}</p><div class="actions">${btns}</div>`;
   renderFeel(info, rec, want);
+}
+
+// 코디 사진들 + 이너·겉옷 대신 표시 + 이너 챙기기 알림
+function piecesHtml(list) {
+  const L = layers(list);
+  const role = (it) => it === L.inner ? "이너" : it === L.outer && L.shirtOuter ? "겉옷 대신" : "";
+  const notes = [];
+  if (L.noInner) notes.push(`💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
+  for (const b of L.bottomInner) notes.push(`💡 '${esc(b.name)}' 안에 속바지·속치마를 챙기세요.`);
+  return `<div class="pieces">${list.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div>${role(it) ? `<span class="role">${role(it)}</span>` : ""}</div>`).join("")}</div>
+    ${notes.map((n) => `<p class="layer-note">${n}</p>`).join("")}`;
 }
 
 // 아침·낮·저녁마다 이 코디가 맞는지 (시간대가 두 개 이상일 때만)
@@ -719,9 +732,9 @@ function aiLen(type, ai) {
 
 function openEditor(item, draft = null) {
   const isNew = !item;
-  const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", len: draft?.len ?? defaultLen(draft?.type || "tee_s"), warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", memo: "", photo: draft?.photo || null, away: false };
+  const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", len: draft?.len ?? defaultLen(draft?.type || "tee_s"), warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", sheer: "none", inner: false, memo: "", photo: draft?.photo || null, away: false };
   if (!it.name) it.name = autoName(it);
-  let nameTouched = !isNew;
+  let nameTouched = !isNew, innerTouched = !isNew;
   let adj = draft?.adj || null;   // 사진 맞추기 상태 (예전 옷은 누를 때 저장된 사진으로 만들어요)
   const ai = draft?.ai;
   const typeOpts = Object.entries(CATS).map(([c, cat]) => `<optgroup label="${cat.ko}">${TYPES.filter((t) => t.cat === c).map((t) => `<option value="${t.id}">${t.ko}</option>`).join("")}</optgroup>`).join("");
@@ -736,6 +749,7 @@ function openEditor(item, draft = null) {
       ${lenHtml()}
       <label class="f">두께(따뜻함)${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips" id="eWarm">${[1, 2, 3, 4, 5].map((w) => `<button class="chip${it.warm === w ? " on" : ""}" data-warm="${w}">${WARM_KO[w]}</button>`).join("")}</div>
+      ${layerHtml()}
       <label class="f">색${draft?.color ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips" id="eColor">${Object.entries(COLORS).map(([k, v]) => `<button class="chip${it.color === k ? " on" : ""}" data-color="${k}"><span class="color-dot" style="background:${v}"></span>${k}</button>`).join("")}</div>
       <label class="f">무늬${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
@@ -754,6 +768,20 @@ function openEditor(item, draft = null) {
   const redraw = () => { const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; };
   const rename = () => { if (!nameTouched) it.name = autoName(it); };
   const setType = (id) => { if (it.type !== id) { it.type = id; it.warm = typeOf(id).warm; it.len = aiLen(id, ai); } rename(); redraw(); };
+  // 비침(상의·겉옷·하의·원피스), 이너 필요(상의·하의·원피스)
+  const layerHtml = () => {
+    let h = "";
+    if (hasSheer(it.type)) h += `<label class="f">비침</label>
+      <div class="chips">${SHEER.map((x) => `<button class="chip${(it.sheer || "none") === x.id ? " on" : ""}" data-sheer="${x.id}">${x.ko}</button>`).join("")}</div>`;
+    if (hasInner(it.type)) {
+      const bottom = typeOf(it.type).cat === "bottom";
+      h += `<label class="f">이너 착용</label>
+      <div class="chips"><button class="chip${it.inner ? "" : " on"}" data-inner="0">필요 없음</button><button class="chip${it.inner ? " on" : ""}" data-inner="1">${bottom ? "속바지·속치마 필요" : "이너 필요"}</button></div>
+      ${it.inner ? `<p class="muted" style="margin:6px 0 0">${bottom ? "추천할 때 속바지·속치마를 챙기라고 알려 줘요." : "추천할 때 옷장의 나시·반팔 티셔츠를 안에 같이 골라 줘요."}</p>` : ""}`;
+    }
+    if (typeOf(it.type).id === "shirt" && !it.inner) h += `<p class="muted" style="margin:6px 0 0">👔 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신으로도 추천해요.</p>`;
+    return h;
+  };
   // 소매 길이(상의·겉옷·원피스) / 기장(하의). 조끼처럼 길이가 정해진 건 안 보여요.
   const lenHtml = () => {
     const k = lenKind(it.type);
@@ -768,6 +796,13 @@ function openEditor(item, draft = null) {
     if (b.dataset.warm) { it.warm = +b.dataset.warm; redraw(); }
     if (b.dataset.color) { it.color = it.color === b.dataset.color ? "" : b.dataset.color; rename(); redraw(); }
     if (b.dataset.pat) { it.pattern = b.dataset.pat; redraw(); }
+    if (b.dataset.sheer) {
+      it.sheer = b.dataset.sheer;
+      // 많이 비치면 이너 필요로 (직접 고른 적 없을 때만)
+      if (!innerTouched && hasInner(it.type)) it.inner = it.sheer === "much" ? true : it.sheer === "none" ? false : it.inner;
+      redraw();
+    }
+    if (b.dataset.inner) { it.inner = b.dataset.inner === "1"; innerTouched = true; redraw(); }
     if (b.dataset.len) {
       // 반팔 티셔츠를 긴팔로 → 종류도 긴팔 티셔츠로, 반바지를 길게 → 슬랙스·면바지로
       const fx = LEN_FIXED[typeOf(it.type).id], nt = fx && LEN_SWAP[fx]?.[b.dataset.len];
@@ -783,7 +818,7 @@ function openEditor(item, draft = null) {
     if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
-      const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+      const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", sheer: hasSheer(it.type) ? it.sheer || "none" : "none", inner: hasInner(it.type) && !!it.inner, name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }

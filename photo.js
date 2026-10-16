@@ -1,4 +1,5 @@
 // 사진 다루기: 파일 → canvas, 누끼 다듬기, 저장용 작은 그림, 대표 색 찾기
+import { COLORS } from "./catalog.js";
 
 const mk = (w, h) => { const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
 
@@ -119,7 +120,8 @@ function hsl(r, g, b) {
   return [h * 60, s, l];
 }
 
-export function colorName(r, g, b) {
+// 큰 갈래 색 (픽셀 하나씩 세서 어떤 색이 제일 많은지 볼 때) — 그림자 때문에 쪼개지지 않게 굵게 나눠요
+function familyName(r, g, b) {
   const [h, s, l] = hsl(r, g, b);
   if (l < 0.16) return "검정";
   if (l > 0.9 && s < 0.5) return "흰색";
@@ -138,23 +140,51 @@ export function colorName(r, g, b) {
   return l > 0.55 ? "분홍" : "보라";
 }
 
-export const COLORS = { 검정: "#222", 흰색: "#fff", 회색: "#999", 네이비: "#1f2d4d", 베이지: "#e3d3b5", 갈색: "#7a5232", 카키: "#6b6b3a",
-  빨강: "#d33", 분홍: "#f2a2b8", 주황: "#f08a3c", 노랑: "#f2d24b", 초록: "#3f9a5a", 하늘색: "#8cc7ef", 파랑: "#2f6fd6", 보라: "#8a5cc7", 여러색: "conic-gradient(#e44,#fd4,#4c6,#48f,#a5d,#e44)" };
+// 자세한 색 이름 (제일 많은 갈래의 평균 색으로 정해요): 차콜·연회색·아이보리·카멜·올리브·민트·연청·라벤더·코랄·와인·머스타드 등
+export function colorName(r, g, b) {
+  const [h, s, l] = hsl(r, g, b);
+  if (l < 0.14) return "검정";
+  if (l > 0.84 && h >= 35 && h < 70 && s >= 0.25) return "아이보리";
+  if (l > 0.9 && s < 0.5) return "흰색";
+  if (s < 0.13 || (s < 0.22 && l < 0.32)) return l > 0.8 ? "흰색" : l > 0.62 ? "연회색" : l > 0.32 ? "회색" : "차콜";
+  if (h >= 200 && h < 255 && l < 0.32) return "네이비";
+  if (h >= 200 && h < 235 && s < 0.55 && l >= 0.5 && l < 0.78) return "연청";
+  if (h >= 205 && h < 232 && s >= 0.25 && s < 0.6 && l < 0.45) return "진청";
+  if (h >= 15 && h < 50 && s < 0.55 && l > 0.62) return "베이지";
+  if (h >= 15 && h < 45 && l >= 0.4 && l <= 0.62 && s >= 0.3 && s < 0.6 && h < 40) return "카멜";
+  if (h >= 10 && h < 45 && l < 0.45) return "갈색";
+  if (h >= 45 && h < 100 && s < 0.45 && l < 0.5) return h < 70 ? "카키" : "올리브";
+  if (h >= 5 && h < 12 && l > 0.58 && l < 0.8 && s > 0.5) return "코랄";
+  if (h < 12 || h >= 340) return l > 0.72 ? "분홍" : l < 0.35 ? "와인" : "빨강";
+  if (h < 40) return l > 0.75 ? "베이지" : h < 25 && l > 0.58 && s > 0.5 ? "코랄" : "주황";
+  if (h < 68) return l < 0.5 || (s < 0.65 && l < 0.6) ? "머스타드" : "노랑";
+  if (h < 140) return "초록";
+  if (h < 185) return l > 0.6 && s < 0.75 ? "민트" : h < 165 ? "초록" : "하늘색";
+  if (h < 200) return "하늘색";
+  if (h < 255) return l > 0.65 ? "하늘색" : "파랑";
+  if (h < 290) return l > 0.68 ? "라벤더" : "보라";
+  return l > 0.55 ? "분홍" : "보라";
+}
+
+export { COLORS };
 
 // 누끼 canvas에서 가장 많은 색 이름
 export function mainColor(src) {
   const k = Math.min(1, 96 / Math.max(src.width, src.height)), c = mk(src.width * k, src.height * k), g = c.getContext("2d");
   g.drawImage(src, 0, 0, c.width, c.height);
-  const d = g.getImageData(0, 0, c.width, c.height).data, count = {};
+  const d = g.getImageData(0, 0, c.width, c.height).data, count = {}, sum = {};
   let n = 0;
   for (let i = 0; i < d.length; i += 4) {
     if (d[i + 3] < 200) continue;
-    const name = colorName(d[i], d[i + 1], d[i + 2]);
+    const name = familyName(d[i], d[i + 1], d[i + 2]);
     count[name] = (count[name] || 0) + 1; n++;
+    const sm = (sum[name] ||= [0, 0, 0]); sm[0] += d[i]; sm[1] += d[i + 1]; sm[2] += d[i + 2];
   }
   const list = Object.entries(count).sort((a, b) => b[1] - a[1]);
   if (!list.length) return "회색";
   // 1등이 35%도 안 되고 2·3등도 크면 여러 색
   if (list[0][1] / n < 0.35 && list.length > 2 && list[2][1] / n > 0.15) return "여러색";
-  return list[0][0];
+  // 제일 많은 갈래의 평균 색 → 자세한 이름 (회색 → 차콜·연회색, 흰색 → 아이보리 등)
+  const [top, cnt] = list[0], sm = sum[top];
+  return colorName(sm[0] / cnt, sm[1] / cnt, sm[2] / cnt);
 }

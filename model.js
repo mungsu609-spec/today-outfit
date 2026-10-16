@@ -1,10 +1,11 @@
 // 추천 계산: 날씨 → 필요한 따뜻함 → 내 옷장에서 고르기, 그리고 기록으로 나에게 맞추기
-import { CATS, TYPES, typeOf, lenOf, lenKind, lenWarmAdj } from "./catalog.js";
+import { CATS, TYPES, typeOf, lenOf, lenKind, lenWarmAdj, sheerAdj, canInner, canShirtOuter, SHIRT_BASE, layers, colorLum } from "./catalog.js";
 
 // ---------- 따뜻함 점수 ----------
 // 옷 하나의 따뜻함 = 두께(1~5) × 부위 무게. 겉옷이 제일 커요.
-// 길이도 반영: 기본보다 길면(반팔 셔츠 → 긴팔 셔츠) 조금 더 따뜻해요
-export const itemWarmth = (it) => Math.max(0.5, (it.warm || typeOf(it.type).warm) + lenWarmAdj(it)) * CATS[typeOf(it.type).cat].weight;
+// 길이도 반영: 기본보다 길면(반팔 셔츠 → 긴팔 셔츠) 조금 더 따뜻해요. 비치는 옷은 조금 덜 따뜻해요.
+//  셔츠를 겉옷 대신 걸쳐도 상의 무게(1.0) 그대로예요 (자켓보다 얇으니까)
+export const itemWarmth = (it) => Math.max(0.5, (it.warm || typeOf(it.type).warm) + lenWarmAdj(it) + sheerAdj(it)) * CATS[typeOf(it.type).cat].weight;
 export const outfitWarmth = (list) => list.reduce((s, it) => s + itemWarmth(it), 0);
 
 // 보통 사람 기준: 체감 온도(°C) → 필요한 따뜻함
@@ -98,7 +99,7 @@ const SHORT = { cold: "추울 수 있어요", cool: "살짝 시원", good: "딱 
 // 코디 하나를 시간대마다 평가해요. 겉옷이 있으면 "벗으면 나아지는지"도 봐요.
 //  결과: { rows:[{…시간대, cls, word, off}], tip }
 export function evalSlots(list, slots, m) {
-  const W = outfitWarmth(list), outer = list.find((it) => typeOf(it.type).cat === "outer");
+  const W = outfitWarmth(list), outer = layers(list).outer;   // 티셔츠 위에 걸친 셔츠도 '겉옷'으로 봐요
   const rows = slots.map((s) => {
     const diff = W - target(s.T, m), cls = fitWord(diff)[1];
     // 겉옷을 벗었을 때 더 맞으면 off: true
@@ -142,20 +143,39 @@ const miss = (d) => d * d + (d < 0 ? 0.4 * d * d : 0);
 // 결과: [{ items:[…], W, cost }] 좋은 순서
 //  slots: [{ T, want }] 아침·낮·저녁 (두 개 이상이면 시간대마다 따져요)
 //   → 시간대마다 '겉옷 입기 / 벗기' 중 나은 쪽으로 점수를 내서, 일교차 큰 날엔 아침저녁 입고 낮에 벗기 좋은 조합을 골라요.
+//   → 셔츠는 티셔츠·나시·원피스 위에 걸쳐서 겉옷 대신으로도 골라요.
+//   → '이너 필요'인 상의·원피스엔 옷장의 나시·반팔 티셔츠를 안에 같이 골라요(밝은 옷엔 밝은 이너, 어두운 옷엔 어두운 이너).
 export function recommend({ items, t, want, date, recent = new Set(), skip = new Set(), slots = null }) {
   const bySlot = slots && slots.length >= 2;
-  const ok = items.filter((it) => !it.away && !skip.has(it.id) && allowed(it, t));
+  const usable = items.filter((it) => !it.away && !skip.has(it.id));
+  const ok = usable.filter((it) => allowed(it, t));
   const by = (cat) => ok.filter((it) => typeOf(it.type).cat === cat);
   const tops = by("top"), bottoms = by("bottom"), dresses = by("dress"), outers = by("outer"), shoes = by("shoes"), accs = by("acc");
+  const shirtOuters = t <= 28 ? tops.filter(canShirtOuter) : [];
+  // 이너는 겉에 안 보이니까 나시도 날씨와 상관없이 써요
+  const inners = usable.filter((it) => typeOf(it.type).cat === "top" && canInner(it));
+  const pickInner = (main) => {
+    // 민소매 옷 안엔 나시만, 밝기가 비슷한 걸로 (밝은 옷엔 누드·베이지를 조금 더 좋아해요)
+    const l = colorLum(main.color), sl = lenOf(main) === "sleeveless";
+    const c = inners.filter((x) => x.id !== main.id && (!sl || typeOf(x.type).id === "sleeveless"));
+    const score = (x) => Math.abs(colorLum(x.color) - l) + (typeOf(x.type).id === "sleeveless" ? 0 : 0.15) - (l > 0.6 && x.color === "베이지" ? 0.2 : 0);
+    return c.sort((a, b) => score(a) - score(b))[0] || null;
+  };
   const bases = [];
   for (const a of tops) for (const b of bottoms) bases.push([a, b]);
   for (const d of dresses) bases.push([d]);
   if (!bases.length) return [];
-  const outerOpts = [null, ...outers];
   const res = [];
   for (const bse of bases) {
+    const main = bse[0], needer = main.inner ? main : null;
+    const inner = needer ? pickInner(needer) : null;
+    const core = inner ? [main, inner, ...bse.slice(1)] : [...bse];
+    // 셔츠를 걸칠 수 있는 건 티셔츠·나시(같은 옷 말고)나 원피스 위
+    const canShirt = typeOf(main.type).cat === "dress" || SHIRT_BASE.includes(typeOf(main.type).id);
+    const outerOpts = [null, ...outers, ...(canShirt ? shirtOuters.filter((s) => s.id !== main.id) : [])];
     for (const o of outerOpts) {
-      let list = o ? [...bse, o] : [...bse];
+      let list = o ? [...core, o] : [...core];
+      const shirtO = o && typeOf(o.type).cat === "top", hotPen = shirtO ? 1 : 3;   // 더운 날 겉옷 벌점 (셔츠는 가볍게)
       let W = outfitWarmth(list);
       // 신발: 남은 차이를 가장 잘 메우는 것
       if (shoes.length) {
@@ -177,22 +197,22 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
         const ow = o ? itemWarmth(o) : 0;
         const cs = slots.map((s) => Math.min(miss(W - s.want), o ? miss(W - ow - s.want) + 0.3 : Infinity));
         cost = 0.7 * (cs.reduce((a, b) => a + b, 0) / cs.length) + 0.3 * Math.max(...cs);   // 평균 + 가장 안 맞는 때도 조금
-        if (o && Math.min(...slots.map((s) => s.T)) >= 23) cost += 3;
+        if (o && Math.min(...slots.map((s) => s.T)) >= 23) cost += hotPen;
       } else {
         cost = miss(W - want);
-        if (o && t >= 23) cost += 3;
+        if (o && t >= 23) cost += hotPen;
       }
-      for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes") cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
+      if (needer && !inner) cost += 0.5;   // 이너가 필요한데 옷장에 맞는 이너가 없으면 조금 덜
+      for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes" && it !== inner) cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
       cost += hash(date + list.map((x) => x.id).join()) * 0.8;   // 같은 날엔 같은 순서, 날마다 조금씩 다르게
-      res.push({ items: list, W, cost });
+      res.push({ items: list, W, cost, key: bse.map((x) => x.id).join() });
     }
   }
   res.sort((a, b) => a.cost - b.cost);
   // 비슷한 코디(겉옷만 같은 걸 줄줄이) 너무 많지 않게: 상의+하의 조합이 같으면 2개까지만
   const seen = {}, out = [];
   for (const r of res) {
-    const k = r.items.filter((x) => ["top", "bottom", "dress"].includes(typeOf(x.type).cat)).map((x) => x.id).join();
-    if ((seen[k] = (seen[k] || 0) + 1) > 2) continue;
+    if ((seen[r.key] = (seen[r.key] || 0) + 1) > 2) continue;
     out.push(r);
     if (out.length >= 15) break;
   }
