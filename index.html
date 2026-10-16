@@ -259,7 +259,7 @@ import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, LEN_FIXED, LEN_SWA
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
-const VERSION = "v6";
+const VERSION = "v7";
 const CFG = window.APP_CONFIG || {};
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -1005,11 +1005,12 @@ function openWelcome(changing = false) {
   openSheet(`<div class="sheet-head"><h2>${changing ? "코드 바꾸기" : "반가워요! 👋"}</h2>${changing ? `<button class="btn ghost" data-x="close">닫기</button>` : ""}</div>
     <p>옷장과 기록은 <b>나만의 코드</b>로 저장돼요. 폰을 바꾸거나 다른 폰에서 쓸 때 이 코드만 있으면 돼요.</p>
     <button class="btn primary block" data-x="new">처음 써요 — 새로 시작</button>
+    ${ls.get("wx.data.items", []).length || ls.get("wx.data.logs", []).length ? `<p class="muted" style="margin:6px 0 0">이 폰에 있던 옷 ${ls.get("wx.data.items", []).length}벌과 기록 ${ls.get("wx.data.logs", []).length}개는 새 코드로 그대로 옮겨져요.</p>` : ""}
     <label class="f">다른 폰에서 쓰던 코드가 있어요</label>
     <div class="row"><input type="text" id="codeIn" placeholder="코드 붙여 넣기" autocapitalize="off" autocomplete="off"><button class="btn" data-x="use">확인</button></div>`, async (e) => {
     const x = e.target.closest("[data-x]")?.dataset.x;
     if (x === "close") closeSheet();
-    if (x === "new") setCode(newCode());
+    if (x === "new") { ls.set("wx.migrate", true); setCode(newCode()); }   // 새로 시작: 이 폰에 있던 옷장·기록을 옮겨요
     if (x === "use") { const c = $("#codeIn").value.trim().toLowerCase(); if (c.length < 12) return toast("코드가 너무 짧아요 (12자 이상)"); setCode(c); }
   }, !changing);
 }
@@ -1053,11 +1054,22 @@ async function start(force = false) {
   recKey = "";
   refresh();
 }
+// '새로 시작'을 누른 뒤 처음 한 번: 이 폰에만 있던 옷장·기록을 Firebase로 올려요 (폰에 있던 건 그대로 남겨 둬요)
+async function migrateLocal() {
+  const L = ls.get("wx.data.items", []), G = ls.get("wx.data.logs", []);
+  try {
+    for (const x of L) await itemStore.set(x.id, x);
+    for (const g of G) await logStore.set(g.id, g);
+    ls.set("wx.migrate", false);
+    if (L.length || G.length) toast(`이 폰에 있던 옷 ${L.length}벌·기록 ${G.length}개를 옮겼어요`);
+  } catch (e) { console.error(e); toast("옷장을 옮기지 못했어요. 인터넷을 확인하고 앱을 다시 열어 주세요"); }
+}
 async function boot() {
   if (online()) {
     try { const code = ls.get("wx.code"); itemStore = await firebaseStore(code, "items"); logStore = await firebaseStore(code, "logs"); }
     catch (e) { console.error(e); toast("인터넷 저장소에 연결하지 못해서 이 폰에만 저장해요"); itemStore = localStore("items"); logStore = localStore("logs"); }
   } else { itemStore = localStore("items"); logStore = localStore("logs"); }
+  if (online() && ls.get("wx.migrate")) await migrateLocal();
   itemStore.subscribe((list) => { items = list; refresh(); });
   logStore.subscribe((list) => { logs = list; refresh(); });
   start();
