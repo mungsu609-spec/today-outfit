@@ -114,6 +114,18 @@ export const canInner = (it) => ["sleeveless", "tee_s"].includes(typeOf(it.type)
 export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && !it.inner;
 export const SHIRT_BASE = ["tee_s", "tee_l", "sleeveless"];   // 셔츠를 위에 걸칠 수 있는 상의
 
+// 무늬가 같은 옷끼리 겹치는지 (체크 원피스 + 체크 겉옷처럼). 무지는 괜찮고, 안에 입는 이너·신발은 안 봐요.
+//  결과: 겹치는 무늬 id (없으면 null)
+export function patternClash(list, skip = []) {
+  const seen = new Set();
+  for (const it of list) {
+    if (skip.includes(it) || typeOf(it.type).cat === "shoes" || !it.pattern || it.pattern === "plain") continue;
+    if (seen.has(it.pattern)) return it.pattern;
+    seen.add(it.pattern);
+  }
+  return null;
+}
+
 // 코디 하나에서 누가 겉옷이고 누가 이너인지 알아내요 (추천·직접 고르기·기록 모두 같은 방법)
 //  outer: 겉옷(없으면 티셔츠 위에 걸친 셔츠), inner: 비치는 옷 안에 입은 나시·반팔,
 //  noInner: 이너가 필요한데 없는 상의·원피스, bottomInner: 속바지·속치마가 필요한 하의

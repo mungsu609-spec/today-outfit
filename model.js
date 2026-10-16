@@ -1,5 +1,5 @@
 // 추천 계산: 날씨 → 필요한 따뜻함 → 내 옷장에서 고르기, 그리고 기록으로 나에게 맞추기
-import { CATS, TYPES, typeOf, lenOf, lenKind, lenWarmAdj, sheerAdj, canInner, canShirtOuter, SHIRT_BASE, layers, colorLum } from "./catalog.js";
+import { CATS, TYPES, typeOf, lenOf, lenKind, lenWarmAdj, sheerAdj, canInner, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash } from "./catalog.js";
 
 // ---------- 따뜻함 점수 ----------
 // 옷 하나의 따뜻함 = 두께(1~5) × 부위 무게. 겉옷이 제일 커요.
@@ -144,6 +144,7 @@ const miss = (d) => d * d + (d < 0 ? 0.4 * d * d : 0);
 //  slots: [{ T, want }] 아침·낮·저녁 (두 개 이상이면 시간대마다 따져요)
 //   → 시간대마다 '겉옷 입기 / 벗기' 중 나은 쪽으로 점수를 내서, 일교차 큰 날엔 아침저녁 입고 낮에 벗기 좋은 조합을 골라요.
 //   → 셔츠는 티셔츠·나시·원피스 위에 걸쳐서 겉옷 대신으로도 골라요.
+//   → 무늬가 같은 옷끼리(체크 원피스 + 체크 겉옷 등)는 안 골라요. 그런 조합밖에 없을 때만 보여 줘요.
 //   → '이너 필요'인 상의·원피스엔 옷장의 나시·반팔 티셔츠를 안에 같이 골라요(밝은 옷엔 밝은 이너, 어두운 옷엔 어두운 이너).
 export function recommend({ items, t, want, date, recent = new Set(), skip = new Set(), slots = null }) {
   const bySlot = slots && slots.length >= 2;
@@ -165,7 +166,7 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
   for (const a of tops) for (const b of bottoms) bases.push([a, b]);
   for (const d of dresses) bases.push([d]);
   if (!bases.length) return [];
-  const res = [];
+  const res = [], clashed = [];
   for (const bse of bases) {
     const main = bse[0], needer = main.inner ? main : null;
     const inner = needer ? pickInner(needer) : null;
@@ -187,7 +188,7 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
       if (want >= 14) {
         const used = new Set();
         for (const a of [...accs].sort((x, y) => itemWarmth(y) - itemWarmth(x))) {
-          if (used.has(a.type)) continue;
+          if (used.has(a.type) || patternClash([...list, a], [inner])) continue;   // 체크 코트에 체크 목도리도 피해요
           if (Math.abs(W + itemWarmth(a) - want) < Math.abs(W - want)) { list.push(a); W += itemWarmth(a); used.add(a.type); }
         }
       }
@@ -205,9 +206,10 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
       if (needer && !inner) cost += 0.5;   // 이너가 필요한데 옷장에 맞는 이너가 없으면 조금 덜
       for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes" && it !== inner) cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
       cost += hash(date + list.map((x) => x.id).join()) * 0.8;   // 같은 날엔 같은 순서, 날마다 조금씩 다르게
-      res.push({ items: list, W, cost, key: bse.map((x) => x.id).join() });
+      (patternClash(list, [inner]) ? clashed : res).push({ items: list, W, cost, key: bse.map((x) => x.id).join() });
     }
   }
+  if (!res.length) res.push(...clashed);   // 옷장에 무늬 옷뿐이면 어쩔 수 없이
   res.sort((a, b) => a.cost - b.cost);
   // 비슷한 코디(겉옷만 같은 걸 줄줄이) 너무 많지 않게: 상의+하의 조합이 같으면 2개까지만
   const seen = {}, out = [];
