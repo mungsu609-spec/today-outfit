@@ -456,7 +456,8 @@ function piecesHtml(list) {
   if (L.noInner) notes.push(`💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
   for (const b of L.bottomInner) notes.push(`💡 '${esc(b.name)}' 안에 속바지·속치마를 챙기세요.`);
   const pc = patternClash(list, [L.inner]);
-  if (pc) notes.push(`💡 ${PATTERNS.find((p) => p.id === pc)?.ko || "같은"} 무늬 옷이 두 벌이에요. 한쪽을 무지로 바꾸면 더 깔끔해요.`);
+  const pk = (id) => PATTERNS.find((p) => p.id === id)?.ko;
+  if (pc) notes.push(`💡 ${pc[0] === pc[1] ? `${pk(pc[0])} 옷이 두 벌` : `${pk(pc[0])}와 ${pk(pc[1])}가 같이`} 있어요. 한쪽을 무지로 바꾸면 더 깔끔해요.`);
   return `<div class="pieces">${list.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div>${role(it) ? `<span class="role">${role(it)}</span>` : ""}</div>`).join("")}</div>
     ${notes.map((n) => `<p class="layer-note">${n}</p>`).join("")}`;
 }

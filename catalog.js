@@ -114,14 +114,16 @@ export const canInner = (it) => ["sleeveless", "tee_s"].includes(typeOf(it.type)
 export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && !it.inner;
 export const SHIRT_BASE = ["tee_s", "tee_l", "sleeveless"];   // 셔츠를 위에 걸칠 수 있는 상의
 
-// 무늬가 같은 옷끼리 겹치는지 (체크 원피스 + 체크 겉옷처럼). 무지는 괜찮고, 안에 입는 이너·신발은 안 봐요.
-//  결과: 겹치는 무늬 id (없으면 null)
+// 무늬 옷끼리 겹치는지: 줄무늬·체크·꽃무늬는 서로(같은 무늬끼리도) 같이 입지 않아요.
+//  무지·프린트는 아무하고나 괜찮아요 (줄무늬 + 프린트 O). 안에 입는 이너·신발은 안 봐요.
+//  결과: 겹치는 두 무늬 id [앞, 뒤] (없으면 null)
+export const BUSY = ["stripe", "check", "floral"];
 export function patternClash(list, skip = []) {
-  const seen = new Set();
+  let first = null;
   for (const it of list) {
-    if (skip.includes(it) || typeOf(it.type).cat === "shoes" || !it.pattern || it.pattern === "plain") continue;
-    if (seen.has(it.pattern)) return it.pattern;
-    seen.add(it.pattern);
+    if (skip.includes(it) || typeOf(it.type).cat === "shoes" || !BUSY.includes(it.pattern)) continue;
+    if (first) return [first, it.pattern];
+    first = it.pattern;
   }
   return null;
 }
