@@ -1,9 +1,10 @@
 // 추천 계산: 날씨 → 필요한 따뜻함 → 내 옷장에서 고르기, 그리고 기록으로 나에게 맞추기
-import { CATS, TYPES, typeOf } from "./catalog.js";
+import { CATS, TYPES, typeOf, lenOf, lenKind, lenWarmAdj } from "./catalog.js";
 
 // ---------- 따뜻함 점수 ----------
 // 옷 하나의 따뜻함 = 두께(1~5) × 부위 무게. 겉옷이 제일 커요.
-export const itemWarmth = (it) => (it.warm || typeOf(it.type).warm) * CATS[typeOf(it.type).cat].weight;
+// 길이도 반영: 기본보다 길면(반팔 셔츠 → 긴팔 셔츠) 조금 더 따뜻해요
+export const itemWarmth = (it) => Math.max(0.5, (it.warm || typeOf(it.type).warm) + lenWarmAdj(it)) * CATS[typeOf(it.type).cat].weight;
 export const outfitWarmth = (list) => list.reduce((s, it) => s + itemWarmth(it), 0);
 
 // 보통 사람 기준: 체감 온도(°C) → 필요한 따뜻함
@@ -12,10 +13,13 @@ export const base = (t) => Math.max(1.8, 15.5 - 0.5 * t);
 export const WARM_PER_DEG = 0.5;
 
 // 느낌 → 그날 "딱 맞았을" 따뜻함과의 차이
+//  "조금 추웠어요 / 살짝 더웠어요"는 절반쯤 (1.2)
 export const FEEL = {
-  cold: { ko: "추웠어요", emoji: "🥶", delta: +2.5 },
-  good: { ko: "딱 좋았어요", emoji: "😊", delta: 0 },
-  hot:  { ko: "더웠어요", emoji: "🥵", delta: -2.5 },
+  cold: { ko: "추웠어요", short: "추움", emoji: "🥶", delta: +2.5, score: 1 },
+  cool: { ko: "조금 추웠어요", short: "조금 추움", emoji: "😬", delta: +1.2, score: 0.5 },
+  good: { ko: "딱 좋았어요", short: "딱 좋음", emoji: "😊", delta: 0, score: 0 },
+  warm: { ko: "살짝 더웠어요", short: "살짝 더움", emoji: "😅", delta: -1.2, score: -0.5 },
+  hot:  { ko: "더웠어요", short: "더움", emoji: "🥵", delta: -2.5, score: -1 },
 };
 
 // ---------- 나에게 맞추기 ----------
@@ -84,10 +88,10 @@ export function feelPoints(g) {
 
 // 시간대별 느낌 → 하루 전체 느낌 (목록·그래프에 보여 줄 때)
 export function overallFeel(slots = {}) {
-  const v = Object.values(slots).filter((f) => FEEL[f]).map((f) => (f === "cold" ? 1 : f === "hot" ? -1 : 0));
+  const v = Object.values(slots).filter((f) => FEEL[f]).map((f) => FEEL[f].score);
   if (!v.length) return null;
   const m = v.reduce((a, b) => a + b, 0) / v.length;
-  return m >= 0.3 ? "cold" : m <= -0.3 ? "hot" : "good";
+  return m >= 0.75 ? "cold" : m >= 0.25 ? "cool" : m <= -0.75 ? "hot" : m <= -0.25 ? "warm" : "good";
 }
 
 const SHORT = { cold: "추울 수 있어요", cool: "살짝 시원", good: "딱 맞아요", warm: "살짝 따뜻", hot: "더울 수 있어요" };
@@ -119,7 +123,9 @@ export function evalSlots(list, slots, m) {
 // 너무 안 어울리는 날씨면 아예 빼요
 function allowed(it, t) {
   const id = typeOf(it.type).id;
-  if (["shorts", "sleeveless", "sandals"].includes(id)) return t >= 20;
+  // 반바지·짧은 치마, 민소매(상의·원피스), 샌들은 더운 날만
+  if (id === "sandals" || (lenKind(it.type) === "leg" && lenOf(it) === "short")) return t >= 20;
+  if (lenOf(it) === "sleeveless" && typeOf(it.type).cat !== "outer") return t >= 20;
   if (id === "padding") return t <= 10;
   if (id === "coat") return t <= 15;
   if (id === "boots") return t <= 13;

@@ -58,6 +58,37 @@ export const THICK = [
   { id: "thick", en: ["a thick heavy warm winter garment", "chunky thick fabric clothing"] },
 ];
 
+// 길이: 상의·겉옷·원피스는 소매(민소매·반팔·긴팔), 하의는 기장(짧은·긴). 신발·소품은 없어요.
+export const SLEEVE = [
+  { id: "sleeveless", ko: "민소매", en: ["a sleeveless garment with no sleeves", "a tank top with bare shoulders"] },
+  { id: "short",      ko: "반팔",   en: ["a garment with short sleeves", "a short-sleeved top"] },
+  { id: "long",       ko: "긴팔",   en: ["a garment with long sleeves reaching the wrists", "a long-sleeved top"] },
+];
+export const LEG = [
+  { id: "short", ko: "짧은 기장 (반바지·짧은 치마)", en: ["short pants above the knee", "a short mini skirt"] },
+  { id: "long",  ko: "긴 기장 (긴바지·긴 치마)",     en: ["long pants reaching the ankles", "a long maxi skirt"] },
+];
+// 종류마다 기본 길이 (없으면 긴 것). FIXED: 종류 이름에 길이가 들어 있어서 길이를 바꾸면 종류도 같이 바뀌는 것
+const LEN_DEFAULT = { tee_s: "short", sleeveless: "sleeveless", vest: "sleeveless", shorts: "short", dress: "short" };
+export const LEN_FIXED = { sleeveless: "top", tee_s: "top", tee_l: "top", vest: "none", shorts: "bottom" };
+// 길이를 바꿨을 때 바뀔 종류: 상의 셋은 서로, 반바지를 길게 하면 슬랙스·면바지
+export const LEN_SWAP = { top: { sleeveless: "sleeveless", short: "tee_s", long: "tee_l" }, bottom: { short: "shorts", long: "slacks" } };
+
 export const WARM_KO = ["", "아주 얇음", "얇음", "보통", "두꺼움", "아주 두꺼움"];
 
 export const typeOf = (id) => TYPES.find((t) => t.id === id) || TYPES[0];
+
+// 이 종류가 어떤 길이를 갖는지: "sleeve" | "leg" | null
+export const lenKind = (type) => { const c = typeOf(type).cat; return c === "bottom" ? "leg" : c === "top" || c === "outer" || c === "dress" ? "sleeve" : null; };
+export const defaultLen = (type) => (lenKind(type) ? LEN_DEFAULT[typeOf(type).id] || "long" : null);
+// 옷의 길이 (예전에 넣은 옷은 종류의 기본 길이)
+export const lenOf = (it) => (lenKind(it.type) ? it.len || defaultLen(it.type) : null);
+const RANK = { sleeveless: 0, short: 1, long: 2 };
+// 기본보다 길면 조금 더 따뜻하게, 짧으면 조금 덜 (한 칸에 0.5)
+export const lenWarmAdj = (it) => { const k = lenKind(it.type); if (!k || !it.len) return 0; return 0.5 * (RANK[it.len] - RANK[defaultLen(it.type)]); };
+// 이름에 붙일 길이 말 (기본 길이와 같거나 종류 이름에 이미 있으면 안 붙여요)
+export const lenWord = (it) => {
+  const k = lenKind(it.type), l = lenOf(it);
+  if (!k || LEN_FIXED[typeOf(it.type).id] || l === defaultLen(it.type)) return "";
+  return k === "leg" ? (l === "short" ? "짧은" : "긴") : SLEEVE.find((x) => x.id === l).ko;
+};

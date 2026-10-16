@@ -77,22 +77,23 @@ async function probs(canvas) {
   const vec = labels.vec || (labels.vec = Object.fromEntries(Object.entries(labels.emb).map(([k, b]) => [k, unpack(b, labels.scale)])));
   const sim = (k) => { const v = vec[k]; let s = 0; for (let i = 0; i < v.length; i++) s += v[i] * img[i]; return s * labels.logit; };
   const out = {};
-  for (const g of ["type", "pat", "thick"]) {
+  for (const g of ["type", "pat", "thick", "sleeve", "leg"]) {
     const keys = Object.keys(vec).filter((k) => k.startsWith(g + ":"));
+    if (!keys.length) continue;
     const p = softmax(keys.map(sim));
     out[g] = Object.fromEntries(keys.map((k, i) => [k.split(":")[1], p[i]]));
   }
   return out;
 }
 
-// 옷 사진(투명 배경 누끼) → { types:[{id,p}], pattern:{id,p}, thick: 0~1, rot: 0|90|180|270 }
+// 옷 사진(투명 배경 누끼) → { types:[{id,p}], pattern:{id,p}, thick: 0~1, sleeve:[{id,p}], leg:[{id,p}], rot: 0|90|180|270 }
 // 옷이 옆으로 누워 찍혀도 맞히도록 네 방향으로 돌려 보고 평균을 내요. rot = 가장 똑바로 보이는 방향.
 export async function classify(cut, onProgress, { onWhite, rotate }) {
   await loadClip(onProgress);
   const runs = [];
   for (const deg of [0, 90, 180, 270]) runs.push({ deg, p: await probs(onWhite(rotate(cut, deg))) });
-  const avg = (g) => { const o = {}; for (const r of runs) for (const [k, v] of Object.entries(r.p[g])) o[k] = (o[k] || 0) + v / runs.length; return Object.entries(o).map(([id, p]) => ({ id, p })).sort((a, b) => b.p - a.p); };
+  const avg = (g) => { if (!runs[0].p[g]) return []; const o = {}; for (const r of runs) for (const [k, v] of Object.entries(r.p[g])) o[k] = (o[k] || 0) + v / runs.length; return Object.entries(o).map(([id, p]) => ({ id, p })).sort((a, b) => b.p - a.p); };
   const types = avg("type"), best = types[0].id;
   const rot = runs.reduce((a, b) => (b.p.type[best] > a.p.type[best] ? b : a)).deg;
-  return { types, pattern: avg("pat")[0], thick: avg("thick").find((x) => x.id === "thick").p, rot };
+  return { types, pattern: avg("pat")[0], thick: avg("thick").find((x) => x.id === "thick").p, sleeve: avg("sleeve"), leg: avg("leg"), rot };
 }

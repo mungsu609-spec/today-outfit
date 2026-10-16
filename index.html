@@ -95,9 +95,9 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .actions .btn { flex: 1; padding: 10px 6px; font-size: 14px; white-space: nowrap; }
 
 /* 느낌 */
-.feels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
-.feel-btn { border: 2px solid transparent; background: var(--soft); border-radius: 14px; padding: 10px 4px; font-size: 14px; font-weight: 600; }
-.feel-btn span { display: block; font-size: 28px; }
+.feels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 12px; }
+.feel-btn { border: 2px solid transparent; background: var(--soft); border-radius: 14px; padding: 8px 2px; font-size: 12px; font-weight: 600; line-height: 1.25; min-width: 0; }
+.feel-btn span { display: block; font-size: 26px; margin-bottom: 2px; }
 .feel-btn.on { border-color: var(--accent); background: var(--accent-soft); }
 
 /* 옷장 */
@@ -171,13 +171,13 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .slot .sw.good { color: var(--good); } .slot .sw.cold, .slot .sw.cool { color: var(--cold); } .slot .sw.hot, .slot .sw.warm { color: var(--hot); }
 .slot .off { display: block; font-size: 11px; color: var(--good); font-weight: 600; }
 .slot-tip { font-size: 13px; font-weight: 600; margin: 8px 0 0; }
-.rate-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.rate-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; padding: 10px 0; border-top: 1px solid var(--line); }
 .rate-row:first-child { border-top: 0; }
-.rate-row .rl { flex: 1; min-width: 0; }
-.rate-row .rl b { display: block; font-size: 15px; }
+.rate-row .rl { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rate-row .rl b { font-size: 15px; }
 .rate-row .rl span { font-size: 12px; }
-.rate-btn { border: 2px solid transparent; background: var(--soft); border-radius: 12px; width: 52px; padding: 4px 0 3px; font-size: 22px; line-height: 1.2; flex: none; }
-.rate-btn small { display: block; font-size: 10px; color: var(--sub); font-weight: 600; }
+.rate-btn { border: 2px solid transparent; background: var(--soft); border-radius: 12px; padding: 5px 0 4px; font-size: 22px; line-height: 1.2; min-width: 0; }
+.rate-btn small { display: block; font-size: 10.5px; color: var(--sub); font-weight: 600; white-space: nowrap; }
 .rate-btn.on { border-color: var(--accent); background: var(--accent-soft); }
 .rate-btn.on small { color: var(--ink); }
 
@@ -255,11 +255,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 <script src="config.js"></script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
-const VERSION = "v4";
+const VERSION = "v6";
 const CFG = window.APP_CONFIG || {};
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -456,7 +456,7 @@ function slotHtml(list, info) {
     <p class="slot-tip">${esc(ev.tip)}</p>`;
 }
 
-const rateBtns = (slot, cur) => Object.entries(FEEL).map(([k, f]) => `<button class="rate-btn${cur === k ? " on" : ""}" data-slot="${slot}" data-feel="${k}" aria-label="${f.ko}">${f.emoji}<small>${f.ko.replace("어요", "")}</small></button>`).join("");
+const rateBtns = (slot, cur) => Object.entries(FEEL).map(([k, f]) => `<button class="rate-btn${cur === k ? " on" : ""}" data-slot="${slot}" data-feel="${k}" aria-label="${f.ko}">${f.emoji}<small>${f.short}</small></button>`).join("");
 // 시간대별 느낌 줄 (홈·기록 화면 같이 씀)
 function rateRows(sl, slots) {
   return sl.map((s) => `<div class="rate-row"><div class="rl"><b>${s.emoji} ${s.ko}</b><span class="muted">${s.start != null ? `${s.start}~${s.end}시 · ` : ""}체감 ${r1(s.T)}°</span></div>${rateBtns(s.id, slots[s.id])}</div>`).join("");
@@ -606,7 +606,7 @@ $("#fileIn").addEventListener("change", async () => {
   const W = (bg || orig).width, H = (bg || orig).height;
   const init = bg ? fitState(W, H, bbox(bg, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
   const adj = { cut: bg, orig, W, H, init, st: { ...init, raw: !bg } };
-  const draft = { type: t?.id, warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai, adj };
+  const draft = { type: t?.id, len: aiLen(t?.id || "tee_s", ai), warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai, adj };
   openAdjust(adj, (photo) => openEditor(null, { ...draft, photo }));
 });
 
@@ -675,11 +675,20 @@ function openAdjust(adj, done, cancel = null) {
   paint();
 }
 
-function autoName(it) { return `${it.color && it.color !== "여러색" ? it.color + " " : ""}${typeOf(it.type).ko}`; }
+function autoName(it) { return [it.color && it.color !== "여러색" ? it.color : "", lenWord(it), typeOf(it.type).ko].filter(Boolean).join(" "); }
+// 종류 + AI 짐작 → 길이. 종류 이름에 길이가 있으면(반팔 티셔츠·반바지 등) 그대로, 아니면 AI가 꽤 확실할 때만 AI 말을 따라요.
+//  바지는 AI 기장 짐작이 약해서(청바지를 짧다고 함) 종류로 정하고, 치마만 AI 기장 짐작을 써요.
+function aiLen(type, ai) {
+  const k = lenKind(type);
+  if (!k) return null;
+  if (LEN_FIXED[typeOf(type).id] || (k === "leg" && typeOf(type).id !== "skirt")) return defaultLen(type);
+  const top = ai?.[k]?.[0];
+  return top && top.p >= 0.55 ? top.id : defaultLen(type);
+}
 
 function openEditor(item, draft = null) {
   const isNew = !item;
-  const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", memo: "", photo: draft?.photo || null, away: false };
+  const it = item ? { ...item } : { id: uid(), type: draft?.type || "tee_s", len: draft?.len ?? defaultLen(draft?.type || "tee_s"), warm: draft?.warm || 2, color: draft?.color || "", pattern: draft?.pattern || "plain", memo: "", photo: draft?.photo || null, away: false };
   if (!it.name) it.name = autoName(it);
   let nameTouched = !isNew;
   let adj = draft?.adj || null;   // 사진 맞추기 상태 (예전 옷은 누를 때 저장된 사진으로 만들어요)
@@ -693,6 +702,7 @@ function openEditor(item, draft = null) {
       <label class="f">종류${ai ? `<span class="ai-tag">AI 추천</span>` : ""}</label>
       ${sug.length ? `<div class="ai-sugg">${sug.map((s) => `<button class="chip${it.type === s.id ? " on" : ""}" data-type="${s.id}">${typeOf(s.id).ko}<small>${Math.round(s.p * 100)}%</small></button>`).join("")}</div><div style="height:8px"></div>` : ""}
       <select id="eType">${typeOpts}</select>
+      ${lenHtml()}
       <label class="f">두께(따뜻함)${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips" id="eWarm">${[1, 2, 3, 4, 5].map((w) => `<button class="chip${it.warm === w ? " on" : ""}" data-warm="${w}">${WARM_KO[w]}</button>`).join("")}</div>
       <label class="f">색${draft?.color ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
@@ -712,7 +722,14 @@ function openEditor(item, draft = null) {
   };
   const redraw = () => { const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; };
   const rename = () => { if (!nameTouched) it.name = autoName(it); };
-  const setType = (id) => { if (it.type !== id) { it.type = id; it.warm = typeOf(id).warm; } rename(); redraw(); };
+  const setType = (id) => { if (it.type !== id) { it.type = id; it.warm = typeOf(id).warm; it.len = aiLen(id, ai); } rename(); redraw(); };
+  // 소매 길이(상의·겉옷·원피스) / 기장(하의). 조끼처럼 길이가 정해진 건 안 보여요.
+  const lenHtml = () => {
+    const k = lenKind(it.type);
+    if (!k || LEN_FIXED[typeOf(it.type).id] === "none") return "";
+    return `<label class="f">${k === "leg" ? "기장" : "소매 길이"}${ai && !LEN_FIXED[typeOf(it.type).id] ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
+      <div class="chips">${(k === "leg" ? LEG : SLEEVE).map((x) => `<button class="chip${lenOf(it) === x.id ? " on" : ""}" data-len="${x.id}">${x.ko}</button>`).join("")}</div>`;
+  };
   async function onClick(e) {
     const b = e.target.closest("button");
     if (!b) return;
@@ -720,6 +737,12 @@ function openEditor(item, draft = null) {
     if (b.dataset.warm) { it.warm = +b.dataset.warm; redraw(); }
     if (b.dataset.color) { it.color = it.color === b.dataset.color ? "" : b.dataset.color; rename(); redraw(); }
     if (b.dataset.pat) { it.pattern = b.dataset.pat; redraw(); }
+    if (b.dataset.len) {
+      // 반팔 티셔츠를 긴팔로 → 종류도 긴팔 티셔츠로, 반바지를 길게 → 슬랙스·면바지로
+      const fx = LEN_FIXED[typeOf(it.type).id], nt = fx && LEN_SWAP[fx]?.[b.dataset.len];
+      if (nt && nt !== it.type) { it.type = nt; it.warm = typeOf(nt).warm; $("#eType").value = nt; }
+      it.len = b.dataset.len; rename(); redraw();
+    }
     const x = b.dataset.x;
     if (x === "close") closeSheet();
     if (x === "adjust") {
@@ -729,7 +752,7 @@ function openEditor(item, draft = null) {
     if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
-      const data = { type: it.type, warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+      const data = { type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }
@@ -752,7 +775,7 @@ function renderLogs() {
     const cnt = (k) => done.filter((g) => g.feel === k).length;
     txt = `<p>기록 <b>${n}개</b>로 분석했어요.</p>
       <p>· 쌀쌀한 날(10°)엔 ${say(o10)}<br>· 더운 날(25°)엔 ${say(o25)}</p>
-      <p class="muted">추웠어요 ${cnt("cold")} · 딱 좋았어요 ${cnt("good")} · 더웠어요 ${cnt("hot")}</p>`;
+      <p class="muted">${Object.entries(FEEL).map(([k, f]) => `${f.emoji} ${f.short} ${cnt(k)}`).join(" · ")}</p>`;
   }
   $("#analysisCard").innerHTML = `<h2>나의 체감</h2>${txt}${chartSvg(done)}`;
   // 느낌을 안 누른 지난 날도 입은 옷이 있으면 보여 줘요 (오늘 것은 홈에서)
@@ -888,7 +911,7 @@ function chartSvg(done) {
   g += `<text x="4" y="${T + 10}" font-size="10" fill="var(--sub)">따뜻</text><text x="4" y="${H - B}" font-size="10" fill="var(--sub)">얇게</text>`;
   g += `<path d="${line(base)}" fill="none" stroke="var(--sub)" stroke-width="1.5" stroke-dasharray="4 4"/>`;
   if (model.n >= 3) g += `<path d="${line((t) => target(t, model))}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`;
-  const col = { cold: "var(--cold)", good: "var(--good)", hot: "var(--hot)" };
+  const col = { cold: "var(--cold)", cool: "color-mix(in srgb, var(--cold) 50%, var(--card))", good: "var(--good)", warm: "color-mix(in srgb, var(--hot) 50%, var(--card))", hot: "var(--hot)" };
   for (const d of done) {
     const list = (d.items || []).map((id) => byId[id]).filter(Boolean);
     const w = list.length === (d.items || []).length && list.length ? outfitWarmth(list) : d.W;
@@ -898,7 +921,7 @@ function chartSvg(done) {
   }
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="체감 온도별 입은 옷 따뜻함">${g}</svg>
     <div class="legend"><span><i class="line" style="background:var(--sub)"></i>보통 사람 기준</span>${model.n >= 3 ? `<span><i class="line" style="background:var(--accent)"></i>나에게 맞춘 기준</span>` : ""}
-    <span><i style="background:var(--cold)"></i>추웠어요</span><span><i style="background:var(--good)"></i>딱 좋았어요</span><span><i style="background:var(--hot)"></i>더웠어요</span></div>
+    ${Object.entries(FEEL).map(([k, f]) => `<span><i style="background:${col[k]}"></i>${f.short}</span>`).join("")}</div>
     <p class="muted" style="margin:8px 0 0">점 하나가 하루예요(아침·낮·저녁을 따로 누른 날은 시간대마다 하나). 파란 점(추웠던 날)이 많으면 선이 위로 올라가서 더 따뜻하게 추천해요.</p>`;
 }
 
