@@ -259,7 +259,7 @@ import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, LEN_FIXED, LEN_SWA
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
-const VERSION = "v8";
+const VERSION = "v9";
 const CFG = window.APP_CONFIG || {};
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -562,15 +562,46 @@ function renderCloset() {
 }
 $("#catChips").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catFilter = b.dataset.cat; ls.set("wx.cat", catFilter); renderCloset(); });
 $("#closetGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) openEditor(byId[b.dataset.id]); });
-$("#btnAdd").addEventListener("click", () => openSheet(`<div class="sheet-head"><h2>옷 추가</h2><button class="btn ghost" data-x="close">닫기</button></div>
+// 기본 옷: 누르면 바로 옷장에 들어가요 (그림은 app/basics/, 도구/basics.html로 그림)
+const BASICS = [
+  { key: "tank-black", type: "sleeveless", color: "검정", name: "검정 나시" },
+  { key: "tank-white", type: "sleeveless", color: "흰색", name: "흰색 나시" },
+  { key: "tank-nude", type: "sleeveless", color: "베이지", name: "누드 나시" },
+  { key: "tee-black", type: "tee_s", color: "검정", name: "검정 반팔 티셔츠" },
+  { key: "tee-white", type: "tee_s", color: "흰색", name: "흰색 반팔 티셔츠" },
+];
+// 받침이 있으면 을/은, 없으면 를/는
+const hasJong = (w) => { const c = w.charCodeAt(w.length - 1) - 0xac00; return c >= 0 && c < 11172 && c % 28 !== 0; };
+const eul = (w) => (hasJong(w) ? "을" : "를"), eun = (w) => (hasJong(w) ? "은" : "는");
+async function addBasic(b) {
+  const c = await urlToCanvas(`basics/${b.key}.webp`);
+  await itemStore.set(uid(), { type: b.type, len: defaultLen(b.type), warm: typeOf(b.type).warm, color: b.color, pattern: "plain", name: b.name, memo: "", away: false,
+    photo: toStored(c, 420), basic: b.key, createdAt: Date.now() });
+}
+function openAdd() {
+  const count = (b) => items.filter((it) => it.basic === b.key).length;
+  openSheet(`<div class="sheet-head"><h2>옷 추가</h2><button class="btn ghost" data-x="close">닫기</button></div>
   <p class="muted">옷 하나를 바닥이나 침대에 펼쳐 놓고 위에서 찍으면 배경이 깔끔하게 지워져요.</p>
   <button class="btn primary block" data-x="photo">📷 사진 찍기·고르기</button>
-  <button class="btn block" style="margin-top:8px" data-x="nophoto">✏️ 사진 없이 추가</button>`, (e) => {
-  const x = e.target.closest("[data-x]")?.dataset.x;
-  if (x === "close") closeSheet();
-  if (x === "photo") { $("#fileIn").value = ""; $("#fileIn").click(); }
-  if (x === "nophoto") openEditor(null);
-}));
+  <button class="btn block" style="margin-top:8px" data-x="nophoto">✏️ 사진 없이 추가</button>
+  <label class="f">기본 옷 바로 넣기</label>
+  <p class="muted" style="margin:0">누르면 바로 옷장에 들어가요. 두께 등은 옷장에서 눌러서 고칠 수 있어요.</p>
+  <div class="pick-grid">${BASICS.map((b) => `<button class="pick${count(b) ? " on" : ""}" data-basic="${b.key}"><div class="ph"><img src="basics/${b.key}.webp" alt=""></div><div class="nm">${count(b) ? "✓ " : ""}${b.name}</div></button>`).join("")}</div>`, async (e) => {
+    const k = e.target.closest("[data-basic]")?.dataset.basic;
+    if (k) {
+      const b = BASICS.find((x) => x.key === k);
+      if (count(b) && !confirm(`'${b.name}'${eun(b.name)} 이미 옷장에 있어요. 하나 더 넣을까요?`)) return;
+      try { await addBasic(b); toast(`${b.name}${eul(b.name)} 옷장에 넣었어요 👕`); openAdd(); }
+      catch (err) { console.error(err); toast("넣지 못했어요"); }
+      return;
+    }
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") closeSheet();
+    if (x === "photo") { $("#fileIn").value = ""; $("#fileIn").click(); }
+    if (x === "nophoto") openEditor(null);
+  });
+}
+$("#btnAdd").addEventListener("click", openAdd);
 
 $("#fileIn").addEventListener("change", async () => {
   const file = $("#fileIn").files[0];
@@ -752,7 +783,7 @@ function openEditor(item, draft = null) {
     if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
-      const data = { type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+      const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }

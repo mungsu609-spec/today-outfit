@@ -1,7 +1,7 @@
 // 인터넷이 없어도 열리도록 앱 파일을 저장해 둠. 앱을 고치면 VERSION 숫자를 올릴 것.
 // (AI 파일은 AI 라이브러리가 따로 저장해요. 여기선 이 앱 주소의 파일만 다뤄요.)
-const VERSION = "v8";
-const FILES = ["./", "index.html", "catalog.js", "model.js", "photo.js", "ai.js", "labels.json", "config.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
+const VERSION = "v9";
+const FILES = ["./", "index.html", "catalog.js", "model.js", "photo.js", "ai.js", "labels.json", "config.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png", "basics/tank-black.webp", "basics/tank-white.webp", "basics/tank-nude.webp", "basics/tee-black.webp", "basics/tee-white.webp"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== VERSION && k.startsWith("v")).map((k) => caches.delete(k))))); self.clients.claim(); });
 // AI가 폰 CPU 여러 개를 같이 쓰게 해 주는 설정(배경 지우기가 약 2배 빨라짐).
