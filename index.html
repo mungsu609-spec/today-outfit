@@ -1172,13 +1172,33 @@ async function migrateLocal() {
     if (L.length || G.length) toast(`이 폰에 있던 옷 ${L.length}벌·기록 ${G.length}개를 옮겼어요`);
   } catch (e) { console.error(e); toast("옷장을 옮기지 못했어요. 인터넷을 확인하고 앱을 다시 열어 주세요"); }
 }
+// 예전 기본 옷(옛날 그림)을 새 그림으로 한 번 바꿔요. 이름·두께·계절 등은 그대로, 색은 지금 옷의 색으로 그려요.
+let basicsFixing = false;
+async function redrawOldBasics(list) {
+  const old = list.filter((it) => OLD_BASIC[it.basic]);
+  if (!old.length || basicsFixing) return;
+  basicsFixing = true;
+  let n = 0;
+  for (const it of old) {
+    try {
+      const [kind, keyColor] = OLD_BASIC[it.basic].split(":");
+      const color = COLORS[it.color] && it.color !== "여러색" ? it.color : keyColor;
+      const c = await basicCanvas(kind, COLORS[color]);
+      const { id, ...data } = it;
+      await itemStore.set(id, { ...data, basic: `${kind}:${color}`, photo: toStored(c, 420) });
+      n++;
+    } catch (e) { console.error(e); }
+  }
+  basicsFixing = false;
+  if (n) toast(`기본 옷 ${n}벌을 새 그림으로 바꿨어요`);
+}
 async function boot() {
   if (online()) {
     try { const code = ls.get("wx.code"); itemStore = await firebaseStore(code, "items"); logStore = await firebaseStore(code, "logs"); }
     catch (e) { console.error(e); toast("인터넷 저장소에 연결하지 못해서 이 폰에만 저장해요"); itemStore = localStore("items"); logStore = localStore("logs"); }
   } else { itemStore = localStore("items"); logStore = localStore("logs"); }
   if (online() && ls.get("wx.migrate")) await migrateLocal();
-  itemStore.subscribe((list) => { items = list; refresh(); });
+  itemStore.subscribe((list) => { items = list; refresh(); redrawOldBasics(list); });
   logStore.subscribe((list) => { logs = list; refresh(); });
   start();
   if (CFG.FIREBASE && !ls.get("wx.code")) openWelcome();
