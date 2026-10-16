@@ -1,5 +1,5 @@
 // 추천 계산: 날씨 → 필요한 따뜻함 → 내 옷장에서 고르기, 그리고 기록으로 나에게 맞추기
-import { CATS, TYPES, typeOf, lenOf, lenKind, lenWarmAdj, sheerAdj, canInner, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash } from "./catalog.js";
+import { CATS, TYPES, typeOf, lenOf, lenKind, hemOf, lenWarmAdj, sheerAdj, canInner, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash } from "./catalog.js";
 
 // ---------- 따뜻함 점수 ----------
 // 옷 하나의 따뜻함 = 두께(1~5) × 부위 무게. 겉옷이 제일 커요.
@@ -124,8 +124,8 @@ export function evalSlots(list, slots, m) {
 // 너무 안 어울리는 날씨면 아예 빼요
 function allowed(it, t) {
   const id = typeOf(it.type).id;
-  // 반바지·짧은 치마, 민소매(상의·원피스), 샌들은 더운 날만
-  if (id === "sandals" || (lenKind(it.type) === "leg" && lenOf(it) === "short")) return t >= 20;
+  // 반바지·짧은 치마·짧은 원피스, 민소매(상의·원피스), 샌들은 더운 날만 (무릎 기장은 상관없어요)
+  if (id === "sandals" || (lenKind(it.type) === "leg" && lenOf(it) === "short") || hemOf(it) === "short") return t >= 20;
   if (lenOf(it) === "sleeveless" && typeOf(it.type).cat !== "outer") return t >= 20;
   if (id === "padding") return t <= 10;
   if (id === "coat") return t <= 15;

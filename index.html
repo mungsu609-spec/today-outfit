@@ -257,7 +257,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 <script src="config.js"></script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
@@ -421,7 +421,7 @@ function renderHome() {
   // 고른 옷이 있으면 그것, 없으면 추천
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
-  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}`;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}`;
   const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
   if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
@@ -767,6 +767,7 @@ function openEditor(item, draft = null) {
     $("#eName").oninput = () => { it.name = $("#eName").value; nameTouched = true; };
     $("#eMemo").oninput = () => { it.memo = $("#eMemo").value; };
     $("#eAway").onchange = () => { it.away = $("#eAway").checked; };
+    if ($("#eAsOuter")) $("#eAsOuter").onchange = () => { it.asOuter = $("#eAsOuter").checked; redraw(); };
   };
   const redraw = () => { const y = $("#sheet").scrollTop; draw(); $("#sheet").scrollTop = y; };
   const rename = () => { if (!nameTouched) it.name = autoName(it); };
@@ -782,15 +783,20 @@ function openEditor(item, draft = null) {
       <div class="chips"><button class="chip${it.inner ? "" : " on"}" data-inner="0">필요 없음</button><button class="chip${it.inner ? " on" : ""}" data-inner="1">${bottom ? "속바지·속치마 필요" : "이너 필요"}</button></div>
       ${it.inner ? `<p class="muted" style="margin:6px 0 0">${bottom ? "추천할 때 속바지·속치마를 챙기라고 알려 줘요." : "추천할 때 옷장의 나시·반팔 티셔츠를 안에 같이 골라 줘요."}</p>` : ""}`;
     }
-    if (typeOf(it.type).id === "shirt" && !it.inner) h += `<p class="muted" style="margin:6px 0 0">👔 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신으로도 추천해요.</p>`;
+    // 셔츠·블라우스: 겉옷으로도 입을지 (예전에 넣은 셔츠는 켜져 있어요)
+    if (typeOf(it.type).id === "shirt") h += `<label class="check"><input type="checkbox" id="eAsOuter" ${it.asOuter !== false ? "checked" : ""} ${it.inner ? "disabled" : ""}>👔 겉옷으로도 입기 (티셔츠·나시·원피스 위에 걸치기)</label>
+      <p class="muted" style="margin:2px 0 0">${it.inner ? "이너가 필요한 셔츠는 겉옷 대신으로는 추천하지 않아요." : it.asOuter !== false ? "추천할 때 겉옷 대신으로도 골라요." : "안에 입는 상의로만 추천해요."}</p>`;
     return h;
   };
-  // 소매 길이(상의·겉옷·원피스) / 기장(하의). 조끼처럼 길이가 정해진 건 안 보여요.
+  // 소매 길이(상의·겉옷·원피스) / 기장(하의·원피스). 조끼처럼 길이가 정해진 건 안 보여요.
   const lenHtml = () => {
     const k = lenKind(it.type);
     if (!k || LEN_FIXED[typeOf(it.type).id] === "none") return "";
-    return `<label class="f">${k === "leg" ? "기장" : "소매 길이"}${ai && !LEN_FIXED[typeOf(it.type).id] ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
+    let h = `<label class="f">${k === "leg" ? "기장" : "소매 길이"}${ai && !LEN_FIXED[typeOf(it.type).id] ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips">${(k === "leg" ? LEG : SLEEVE).map((x) => `<button class="chip${lenOf(it) === x.id ? " on" : ""}" data-len="${x.id}">${x.ko}</button>`).join("")}</div>`;
+    if (hasHem(it.type)) h += `<label class="f">기장</label>
+      <div class="chips">${HEM.map((x) => `<button class="chip${hemOf(it) === x.id ? " on" : ""}" data-hem="${x.id}">${x.ko}</button>`).join("")}</div>`;
+    return h;
   };
   async function onClick(e) {
     const b = e.target.closest("button");
@@ -812,6 +818,7 @@ function openEditor(item, draft = null) {
       if (nt && nt !== it.type) { it.type = nt; it.warm = typeOf(nt).warm; $("#eType").value = nt; }
       it.len = b.dataset.len; rename(); redraw();
     }
+    if (b.dataset.hem) { it.hem = b.dataset.hem; rename(); redraw(); }
     const x = b.dataset.x;
     if (x === "close") closeSheet();
     if (x === "adjust") {
@@ -821,7 +828,8 @@ function openEditor(item, draft = null) {
     if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
-      const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", sheer: hasSheer(it.type) ? it.sheer || "none" : "none", inner: hasInner(it.type) && !!it.inner, name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+      const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", sheer: hasSheer(it.type) ? it.sheer || "none" : "none", inner: hasInner(it.type) && !!it.inner,
+        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }
