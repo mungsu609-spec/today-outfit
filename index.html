@@ -259,7 +259,7 @@ import { CATS, TYPES, PATTERNS, WARM_KO, typeOf } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
-const VERSION = "v2";
+const VERSION = "v3";
 const CFG = window.APP_CONFIG || {};
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -419,7 +419,8 @@ function renderHome() {
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
   const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + (x.warm || "") + (x.away ? 1 : 0)).join()}`;
-  if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date) }); }
+  const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
+  if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
   const who = day === 0 ? "오늘" : "내일";
   let body;
@@ -436,10 +437,11 @@ function renderHome() {
     ? `기록 ${model.n}개를 보면 이 날씨에 보통보다 ${Math.abs(off).toFixed(1)}° 더 ${off > 0 ? "춥게" : "덥게"} 느끼는 편이라 ${off > 0 ? "조금 더 따뜻하게" : "조금 더 시원하게"} 골랐어요.`
     : model.n >= 3 ? `기록 ${model.n}개를 보면 보통 사람과 비슷하게 느끼는 편이에요.`
     : `기록이 쌓일수록 나에게 맞춰져요 (지금 ${model.n}개, 3개부터 반영).`;
+  const gapWhy = !picked && sl.length >= 2 && Math.max(...sl.map((x) => x.T)) - Math.min(...sl.map((x) => x.T)) >= 4 ? " 아침·낮·저녁 온도 차이까지 따져서 골랐어요." : "";
   const btns = picked
     ? `<button class="btn" data-a="choose">바꾸기</button><button class="btn" data-a="unpick">추천 다시 보기</button>`
     : `${recs.length > 1 ? `<button class="btn" data-a="next">↻ 다른 코디</button>` : ""}${items.length ? `<button class="btn" data-a="choose">직접 고르기</button>` : `<button class="btn" data-a="closet">옷 넣기</button>`}${rec ? `<button class="btn primary" data-a="wear">이걸로 입을래요</button>` : ""}`;
-  $("#outfitCard").innerHTML = `${body}<p class="why">${why}</p><div class="actions">${btns}</div>`;
+  $("#outfitCard").innerHTML = `${body}<p class="why">${why}${gapWhy}</p><div class="actions">${btns}</div>`;
   renderFeel(info, rec, want);
 }
 

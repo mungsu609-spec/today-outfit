@@ -130,8 +130,14 @@ function allowed(it, t) {
 
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
 
+// 따뜻함 차이 → 벌점. 추운 것보다 조금 더운 게 나아요
+const miss = (d) => d * d + (d < 0 ? 0.4 * d * d : 0);
+
 // 결과: [{ items:[…], W, cost }] 좋은 순서
-export function recommend({ items, t, want, date, recent = new Set(), skip = new Set() }) {
+//  slots: [{ T, want }] 아침·낮·저녁 (두 개 이상이면 시간대마다 따져요)
+//   → 시간대마다 '겉옷 입기 / 벗기' 중 나은 쪽으로 점수를 내서, 일교차 큰 날엔 아침저녁 입고 낮에 벗기 좋은 조합을 골라요.
+export function recommend({ items, t, want, date, recent = new Set(), skip = new Set(), slots = null }) {
+  const bySlot = slots && slots.length >= 2;
   const ok = items.filter((it) => !it.away && !skip.has(it.id) && allowed(it, t));
   const by = (cat) => ok.filter((it) => typeOf(it.type).cat === cat);
   const tops = by("top"), bottoms = by("bottom"), dresses = by("dress"), outers = by("outer"), shoes = by("shoes"), accs = by("acc");
@@ -159,9 +165,17 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
           if (Math.abs(W + itemWarmth(a) - want) < Math.abs(W - want)) { list.push(a); W += itemWarmth(a); used.add(a.type); }
         }
       }
-      const diff = W - want;
-      let cost = diff * diff + (diff < 0 ? 0.4 * diff * diff : 0);   // 추운 것보다 조금 더운 게 나아요
-      if (o && t >= 23) cost += 3;
+      let cost;
+      if (bySlot) {
+        // 시간대마다 벌점: 겉옷이 있으면 벗는 것도 해 봐요(벗고 들고 다니는 수고 0.3)
+        const ow = o ? itemWarmth(o) : 0;
+        const cs = slots.map((s) => Math.min(miss(W - s.want), o ? miss(W - ow - s.want) + 0.3 : Infinity));
+        cost = 0.7 * (cs.reduce((a, b) => a + b, 0) / cs.length) + 0.3 * Math.max(...cs);   // 평균 + 가장 안 맞는 때도 조금
+        if (o && Math.min(...slots.map((s) => s.T)) >= 23) cost += 3;
+      } else {
+        cost = miss(W - want);
+        if (o && t >= 23) cost += 3;
+      }
       for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes") cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
       cost += hash(date + list.map((x) => x.id).join()) * 0.8;   // 같은 날엔 같은 순서, 날마다 조금씩 다르게
       res.push({ items: list, W, cost });
