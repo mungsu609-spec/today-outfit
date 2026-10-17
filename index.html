@@ -310,7 +310,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount, innerOnly, isLegwear } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
-import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
+import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints, bareArms } from "./model.js";
 
 const VERSION = "v9";
 const CFG = window.APP_CONFIG || {};
@@ -522,6 +522,7 @@ function piecesHtml(list) {
   if (L.noInner) notes.push(L.noInner.innerPick?.length && typeOf(L.noInner.type).cat === "top"
     ? `💡 '${esc(L.noInner.name)}' 안에 이너를 같이 입으면 좋아요. (골라 둔 이너가 ${L.noInner.innerPick.every((x) => x === "heat") ? `히트텍뿐이라 ${HEAT_MAX}°보다 따뜻한 날엔 안 골랐어요` : "이 코디엔 안 맞았어요"})`
     : `💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
+  if (bareArms(list, L.outer) && !(L.outer && lenOf(L.outer) !== "sleeveless")) notes.push("💡 민소매 옷이에요. 위에 겉옷이나 셔츠를 걸치면 좋아요.");
   for (const b of L.bottomInner) notes.push(`💡 '${esc(b.name)}' 안에 속바지·속치마를 챙기세요.`);
   const pc = patternClash(list, [L.inner]);
   const pk = (id) => PATTERNS.find((p) => p.id === id)?.ko;
