@@ -160,7 +160,7 @@ export const mainIds = (list, inner = layers(list).inner) => list.filter((x) => 
 // 결과: [{ items:[…], W, cost }] 좋은 순서
 //  slots: [{ T, want }] 아침·낮·저녁 (두 개 이상이면 시간대마다 따져요)
 //   → 시간대마다 '겉옷 입기 / 벗기' 중 나은 쪽으로 점수를 내서, 일교차 큰 날엔 아침저녁 입고 낮에 벗기 좋은 조합을 골라요.
-//   → 셔츠는 티셔츠·나시·원피스 위에 걸쳐서 겉옷 대신으로도 골라요.
+//   → 셔츠는 티셔츠·원피스 위에 걸쳐서 겉옷 대신으로도 골라요.
 //   → 무늬가 같은 옷끼리(체크 원피스 + 체크 겉옷 등)는 안 골라요. 그런 조합밖에 없을 때만 보여 줘요.
 //   → '이너 필요'인 상의·원피스엔 옷장의 나시·반팔 티셔츠를 안에 같이 골라요(밝은 옷엔 밝은 이너, 어두운 옷엔 어두운 이너).
 //     상의에 '어떤 이너'를 골라 뒀으면 그중에서 (히트텍은 쌀쌀한 날만).
@@ -192,7 +192,8 @@ export function recommend({ items, t, want, date, recent = new Set(), recentFits
   const byItem = Object.fromEntries(items.map((x) => [x.id, x]));
   const fits = recentFits.map((s) => { const l = [...s].map((id) => byItem[id]).filter(Boolean); return mainIds(l, layers(l).inner); });
   const bases = [];
-  for (const a of tops) for (const b of bottoms) bases.push([a, b]);
+  // 나시는 이너로만 입어요 — 상의 자리(단독, 위에 셔츠만 걸친 것 포함)엔 안 골라요
+  for (const a of tops) if (typeOf(a.type).id !== "sleeveless") for (const b of bottoms) bases.push([a, b]);
   for (const d of dresses) bases.push([d]);
   if (!bases.length) return [];
   const res = [], clashed = [];
@@ -201,7 +202,7 @@ export function recommend({ items, t, want, date, recent = new Set(), recentFits
     const ins = needer ? innerOpts(needer) : [];
     for (const [inner, innerCost] of ins.length ? ins : [[null, 0]]) {
     const core = inner ? [main, inner, ...bse.slice(1)] : [...bse];
-    // 셔츠를 걸칠 수 있는 건 티셔츠·나시(같은 옷 말고)나 원피스 위
+    // 셔츠를 걸칠 수 있는 건 티셔츠(같은 옷 말고)나 원피스 위
     const canShirt = typeOf(main.type).cat === "dress" || SHIRT_BASE.includes(typeOf(main.type).id);
     const outerOpts = [null, ...outers, ...(canShirt ? shirtOuters.filter((s) => s.id !== main.id) : [])];
     for (const o of outerOpts) {
