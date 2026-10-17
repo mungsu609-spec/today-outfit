@@ -195,6 +195,18 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .adj-frame.brush { cursor: crosshair; }
 .brush-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .brush-row input[type=range] { flex: 1; }
+.adj-frame.dark { background-color: #000; background-image: none; }
+.hist-row { display: flex; gap: 6px; margin-top: 10px; }
+.hist-row .btn { flex: 1; padding: 10px 4px; font-size: 14px; }
+.hist-row .btn.on { background: #000; color: #fff; }
+.nope-btn { display: block; margin: 10px auto 0; font-size: 14px; }
+.nope-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.nope-row:first-of-type { border-top: 0; }
+.nope-pics { display: grid; grid-template-columns: repeat(2, 36px); gap: 4px; flex-shrink: 0; }
+.nope-pics .ph { width: 36px; height: 36px; border-radius: 8px; background: var(--soft); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 20px; }
+.nope-pics .ph img { width: 100%; height: 100%; object-fit: contain; }
+.nope-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 14px; }
+.nope-txt b { font-weight: 600; overflow-wrap: anywhere; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 .edit-photo { display: block; margin: 8px auto 0; }
 .photo-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
@@ -243,6 +255,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
       <p class="muted">이 시간대 날씨로 옷을 골라요. 아침·저녁 쌀쌀함도 챙겨요.</p>
       <div class="row"><select id="setStart"></select><span>~</span><select id="setEnd"></select></div>
     </div>
+    <div class="card" id="setNope"></div>
     <div class="card" id="setStore"></div>
     <div class="card">
       <h2>폰 안의 AI</h2>
@@ -294,7 +307,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
-import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
+import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints, mainIds } from "./model.js";
 
 const VERSION = "v9";
 const CFG = window.APP_CONFIG || {};
@@ -426,7 +439,10 @@ function hoursInfo(data, date) {
 }
 
 // ---------- 추천 ----------
-let model = { c: 0, d: 0, n: 0 }, recs = [], recIdx = 0, recKey = "";
+let model = { c: 0, d: 0, n: 0 }, recs = [], recIdx = 0, recKey = "", keepIdx = null;
+// '마음에 안 들어요' 기록: 코디의 첫 옷(상의·원피스)에 { ids: 겉에 보이는 옷 id들, at, date }로 붙여 둬요
+//  (Firebase 규칙을 안 바꿔도 되고, 그 옷을 지우면 기록도 같이 없어져요)
+const nopeList = () => items.flatMap((it) => (it.nope || []).map((n, i) => ({ ...n, owner: it, i }))).sort((a, b) => b.at - a.at);
 const logOf = (date) => logs.find((g) => g.id === date);
 function recentSet(date) {
   const s = new Set(), t = new Date(date + "T00:00");
@@ -463,9 +479,9 @@ function renderHome() {
   // 고른 옷이 있으면 그것, 없으면 추천
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
-  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}`;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}|${nopeList().map((n) => n.ids.join("+")).join()}`;
   const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
-  if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), recentFits: recentFits(info.date), slots }); }
+  if (key !== recKey) { recKey = key; recIdx = keepIdx ?? 0; keepIdx = null; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), recentFits: recentFits(info.date), nope: nopeList().map((n) => n.ids), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
   const who = day === 0 ? "오늘" : "내일";
   let body;
@@ -475,7 +491,7 @@ function renderHome() {
       ${piecesHtml(rec.items)}${slotHtml(rec.items, info)}`;
   } else {
     body = `<div class="outfit-head"><h2>${who}의 코디</h2></div><div class="generic">${genericOutfit(want)}</div>
-      <p class="why">옷장에 상의와 하의(또는 원피스)를 넣으면 내 옷으로 골라 줘요.</p>`;
+      <p class="why">${items.length && nopeList().length ? "옷장에서 고를 수 있는 코디가 다 '마음에 안 들어요'로 빠졌어요. 설정에서 취소하거나 옷을 더 넣어 주세요." : "옷장에 상의와 하의(또는 원피스)를 넣으면 내 옷으로 골라 줘요."}</p>`;
   }
   const off = degOffset(info.T, model);
   const why = model.n >= 3 && Math.abs(off) >= 0.5
@@ -486,7 +502,8 @@ function renderHome() {
   const btns = picked
     ? `<button class="btn" data-a="choose">바꾸기</button><button class="btn" data-a="unpick">추천 다시 보기</button>`
     : `${recs.length > 1 ? `<button class="btn" data-a="next">↻ 다른 코디</button>` : ""}${items.length ? `<button class="btn" data-a="choose">직접 고르기</button>` : `<button class="btn" data-a="closet">옷 넣기</button>`}${rec ? `<button class="btn primary" data-a="wear">이걸로 입을래요</button>` : ""}`;
-  $("#outfitCard").innerHTML = `${body}<p class="why">${why}${gapWhy}</p><div class="actions">${btns}</div>`;
+  const nopeBtn = !picked && rec ? `<button class="btn ghost nope-btn" data-a="nope">👎 마음에 안 들어요</button>` : "";
+  $("#outfitCard").innerHTML = `${body}<p class="why">${why}${gapWhy}</p><div class="actions">${btns}</div>${nopeBtn}`;
   renderFeel(info, rec, want);
 }
 
@@ -570,6 +587,15 @@ $("#outfitCard").addEventListener("click", async (e) => {
     const rec = recs[recIdx % recs.length];
     await logStore.set(info.date, { ...(logOf(info.date) || {}), date: info.date, T: +info.T.toFixed(1), tmin: info.tmin, tmax: info.tmax, want: +target(info.T, model).toFixed(2), items: rec.items.map((x) => x.id), W: +rec.W.toFixed(2) });
     toast("좋아요! 저녁에 어땠는지 알려 주세요");
+  }
+  if (a === "nope") {
+    // 이 코디(겉에 보이는 옷 조합)는 다음부터 추천하지 않아요. 설정에서 취소할 수 있어요.
+    const rec = recs[recIdx % recs.length], owner = rec?.items[0];
+    if (!owner || !byId[owner.id] || owner.id.startsWith("inner:")) return;
+    const { id, ...data } = items.find((x) => x.id === owner.id);
+    keepIdx = recIdx;   // 목록에서 빠지니까 같은 자리 = 다음 코디
+    try { await itemStore.set(id, { ...data, nope: [...(data.nope || []), { ids: mainIds(rec.items), at: Date.now(), date: info.date }] }); toast("이 코디는 다음부터 추천하지 않을게요 (설정에서 취소)"); }
+    catch (err) { console.error(err); keepIdx = null; toast("저장하지 못했어요"); }
   }
   if (a === "unpick") { const g = logOf(info.date); if (g) { if (g.feel) await logStore.set(g.id, { ...g, items: [] }); else await logStore.remove(g.id); } }
   if (a === "choose") openChooser(info);
@@ -763,10 +789,15 @@ function openAdjust(adj, done, cancel = null) {
   const F = Math.min(300, $("#sheet").clientWidth - 32 || 300);
   // 손가락 붓: 취소하면 이 화면에서 칠한 것·구멍 메우기를 되돌려요
   let tool = "move", stroke = null, brushSize = 4;   // 붓 크기 1~10 (네모 크기의 1%씩)
-  const keep = adj.bg ? { n: adj.strokes.length, hole: adj.hole } : null;
+  // 고친 기록(붓·구멍 메우기): adj.hist = [{ strokes, hole }…], adj.hpos = 지금 자리 → '이전으로'·'이후로'로 처음부터 끝까지 오가요
+  const snap = () => ({ strokes: adj.strokes.slice(), hole: adj.hole });
+  if (adj.bg && !adj.hist) { adj.hist = [snap()]; adj.hpos = 0; }
+  const keep = adj.bg ? { hist: adj.hist.slice(), hpos: adj.hpos } : null;
+  let dark = ls.get("wx.adjDark", false);   // 검정 배경 (껐다 켰다, 다음에도 기억)
   openSheet(`<div class="sheet-head"><h2>사진 맞추기</h2></div>
     <p class="muted" style="margin:0 0 10px">한 손가락으로 끌면 옮겨지고, 두 손가락을 벌리거나 좁히면 커지고 작아져요. <b>파란 네모 안</b>에 보이는 그대로 저장돼요.</p>
-    <div class="adj-frame" id="adjBox" style="width:${F}px;height:${F}px"><canvas id="adjCv"></canvas></div>
+    <div class="adj-frame${dark ? " dark" : ""}" id="adjBox" style="width:${F}px;height:${F}px"><canvas id="adjCv"></canvas></div>
+    <div class="hist-row">${adj.bg ? `<button class="btn" data-j="prev">↶ 이전으로</button><button class="btn" data-j="next">↷ 이후로</button>` : ""}<button class="btn${dark ? " on" : ""}" data-j="dark">🌑 검정 배경</button></div>
     <div class="adj-tools"><button class="btn" data-j="left">↺ 왼쪽</button><button class="btn" data-j="right">↻ 오른쪽</button><button class="btn" data-j="out">－ 작게</button><button class="btn" data-j="in">＋ 크게</button></div>
     <label class="f">살짝 기울이기 <span id="adjTiltV">${st.tilt}°</span></label>
     <input type="range" id="adjTilt" min="-45" max="45" step="1" value="${st.tilt}">
@@ -776,13 +807,13 @@ function openAdjust(adj, done, cancel = null) {
     <p class="muted" style="margin:6px 0 0">'큰 구멍까지'는 바지 두 다리 사이 바닥처럼 옷에 둘러싸인 배경도 채워요.</p>
     <label class="f">손가락으로 고치기</label>
     <div class="chips">${[["move", "✋ 옮기기·확대"], ["fix", "🖌️ 되살리기"], ["erase", "🧽 지우기"]].map(([k, ko]) => `<button class="chip${tool === k ? " on" : ""}" data-tool="${k}">${ko}</button>`).join("")}</div>
-    <div class="brush-row" id="brushRow" ${tool === "move" ? "hidden" : ""}><span class="muted">붓 크기</span><input type="range" id="brushSize" min="1" max="10" step="1" value="${brushSize}"><button class="btn" data-j="undo" ${adj.strokes.length ? "" : "disabled"}>↶ 되돌리기</button></div>
+    <div class="brush-row" id="brushRow" ${tool === "move" ? "hidden" : ""}><span class="muted">붓 크기</span><input type="range" id="brushSize" min="1" max="10" step="1" value="${brushSize}"></div>
     <p class="muted" style="margin:6px 0 0" id="brushTip">${tool === "move" ? "되살리기: 지워진 옷 부분을 손가락으로 문지르면 원래대로 돌아와요. 지우기: 남은 배경을 문질러 지워요. (붓을 쓸 때도 두 손가락은 확대·옮기기)" : tool === "fix" ? "지워진 옷 부분을 문지르면 원래 사진으로 돌아와요. 크게 확대하면 더 꼼꼼하게 칠할 수 있어요." : "남은 배경을 문지르면 지워져요."}</p>` : ""}
     <div class="row" style="margin-top:16px"><button class="btn ghost" data-j="reset">처음대로</button><span class="spacer"></span>${cancel ? `<button class="btn" data-j="cancel">취소</button>` : ""}<button class="btn primary" data-j="ok">이대로 쓰기</button></div>`, (e) => {
     const r = e.target.closest("[data-raw]");
     if (r) { st.raw = r.dataset.raw === "1"; $$("[data-raw]").forEach((x) => x.classList.toggle("on", x === r)); paint(); return; }
     const hb = e.target.closest("[data-hole]");
-    if (hb) { adj.hole = hb.dataset.hole; holeCut(adj); st.raw = false; $$("[data-hole]").forEach((x) => x.classList.toggle("on", x === hb)); $$("[data-raw]").forEach((x) => x.classList.toggle("on", x.dataset.raw === "0")); paint(); return; }
+    if (hb) { if (hb.dataset.hole !== adj.hole) { adj.hole = hb.dataset.hole; holeCut(adj); record(); } st.raw = false; sync(); paint(); return; }
     const tb = e.target.closest("[data-tool]");
     if (tb) {
       tool = tb.dataset.tool;
@@ -796,8 +827,10 @@ function openAdjust(adj, done, cancel = null) {
     if (j === "left" || j === "right") spin(j === "left" ? -90 : 90, true);
     if (j === "in" || j === "out") zoom(j === "in" ? 1.15 : 1 / 1.15, 0, 0);
     if (j === "reset") { Object.assign(st, adj.init); $("#adjTilt").value = st.tilt; $("#adjTiltV").textContent = st.tilt + "°"; paint(); }
-    if (j === "undo" && adj.strokes.length) { adj.strokes.pop(); holeCut(adj); paint(); undoBtn(); }
-    if (j === "cancel") { if (keep) { adj.strokes.length = keep.n; adj.hole = keep.hole; holeCut(adj); } cancel(); }
+    if (j === "prev" && adj.hpos > 0) toHist(adj.hpos - 1);
+    if (j === "next" && adj.hpos < adj.hist.length - 1) toHist(adj.hpos + 1);
+    if (j === "dark") { dark = !dark; ls.set("wx.adjDark", dark); box.classList.toggle("dark", dark); $("[data-j=dark]").classList.toggle("on", dark); }
+    if (j === "cancel") { if (keep) { adj.hist = keep.hist; toHist(keep.hpos); } cancel(); }
     if (j === "ok") {
       const c = mk(420, 420);
       paintFrame(c.getContext("2d"), 420, src(), st, adj.W, adj.H);
@@ -810,7 +843,15 @@ function openAdjust(adj, done, cancel = null) {
   const g = cv.getContext("2d");
   const src = () => (st.raw || !adj.cut ? adj.orig : adj.cut);
   if ($("#brushSize")) $("#brushSize").oninput = () => { brushSize = +$("#brushSize").value; };
-  const undoBtn = () => { const b = $("[data-j=undo]"); if (b) b.disabled = !adj.strokes.length; };
+  // 버튼·칩을 지금 상태에 맞추기
+  const sync = () => {
+    $$("[data-hole]").forEach((x) => x.classList.toggle("on", x.dataset.hole === adj.hole));
+    $$("[data-raw]").forEach((x) => x.classList.toggle("on", x.dataset.raw === (st.raw ? "1" : "0")));
+    if ($("[data-j=prev]")) { $("[data-j=prev]").disabled = adj.hpos <= 0; $("[data-j=next]").disabled = adj.hpos >= adj.hist.length - 1; }
+  };
+  // 새로 고친 것 기록: 이전으로 돌아간 상태에서 새로 고치면 그 뒤 기록은 없어져요
+  const record = () => { adj.hist.length = adj.hpos + 1; adj.hist.push(snap()); adj.hpos++; sync(); };
+  const toHist = (k) => { const h = adj.hist[k]; adj.hpos = k; adj.strokes = h.strokes.slice(); adj.hole = h.hole; holeCut(adj); st.raw = false; sync(); paint(); };
   // 네모 위 점(가운데 기준, 네모 크기 1) → 사진 픽셀 자리 (paintFrame을 거꾸로)
   const toSrc = ([nx, ny]) => {
     const px = st.z / Math.max(adj.W, adj.H), [u, v] = turn(nx - st.x, ny - st.y, -(st.rot + st.tilt));
@@ -836,7 +877,7 @@ function openAdjust(adj, done, cancel = null) {
     if (tool !== "move" && adj.cut && pts.size === 1) {
       const p = toSrc(at(e));
       stroke = { mode: tool, r: brushR(), pts: [p] };
-      adj.strokes.push(stroke); brushSeg(adj.cut, adj.orig, stroke, p, p); paint(); undoBtn();
+      adj.strokes.push(stroke); brushSeg(adj.cut, adj.orig, stroke, p, p); paint(); record();
     } else stroke = null;
   });
   box.addEventListener("pointermove", (e) => {
@@ -855,7 +896,7 @@ function openAdjust(adj, done, cancel = null) {
   box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
   box.addEventListener("wheel", (e) => { e.preventDefault(); const [mx, my] = at(e); zoom(Math.exp(-e.deltaY * 0.0015), mx, my); }, { passive: false });
   box.addEventListener("gesturestart", (e) => e.preventDefault());   // 아이폰: 화면 전체가 확대되지 않게
-  paint();
+  sync(); paint();
 }
 
 function autoName(it) { return [it.color && it.color !== "여러색" ? it.color : "", lenWord(it), typeOf(it.type).ko].filter(Boolean).join(" "); }
@@ -989,7 +1030,7 @@ function openEditor(item, draft = null) {
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
       const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", sheer: hasSheer(it.type) ? it.sheer || "none" : "none", inner: hasInner(it.type) && !!it.inner,
-        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), ...(typeOf(it.type).cat === "top" && it.inner ? { innerPick: it.innerPick || [] } : {}), point: !!it.point, seasons: curSeasons(), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), ...(typeOf(it.type).cat === "top" && it.inner ? { innerPick: it.innerPick || [] } : {}), point: !!it.point, seasons: curSeasons(), ...(it.nope?.length ? { nope: it.nope } : {}), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }
@@ -1176,8 +1217,30 @@ function renderSet() {
       ? `<h2>저장</h2><p class="muted">아직 코드를 정하지 않았어요.</p><button class="btn primary" data-s="welcome">시작하기</button>`
       : `<h2>저장 (이 폰에만)</h2><p class="muted">지금은 이 폰에만 저장돼요. Firebase를 연결하면 폰을 바꿔도 옷장과 기록이 남아요.</p>`;
   $("#appVer").textContent = VERSION;
+  renderNope();
   aiState();
 }
+// 설정: '마음에 안 들어요'로 뺀 코디 목록 + 취소
+function renderNope() {
+  const L = nopeList();
+  $("#setNope").innerHTML = `<h2>👎 마음에 안 드는 코디 <span class="muted">${L.length ? L.length + "개" : ""}</span></h2>
+    <p class="muted">오늘 화면에서 '마음에 안 들어요'를 누른 코디예요. 이 옷 조합은 추천하지 않아요. 취소하면 다시 추천할 수 있어요.</p>
+    ${L.length ? L.map((n) => { const list = n.ids.map((id) => byId[id]).filter(Boolean);
+      return `<div class="nope-row"><div class="nope-pics">${list.map((it) => `<div class="ph" title="${esc(it.name)}">${phHtml(it)}</div>`).join("")}</div>
+        <div class="nope-txt"><b>${list.map((it) => esc(it.name)).join(" + ")}</b><span class="muted">${n.date ? md(n.date) : ""}</span></div>
+        <button class="btn" data-nope="${n.owner.id}:${n.i}">취소</button></div>`; }).join("")
+      : `<p class="muted" style="margin:8px 0 0">아직 없어요.</p>`}`;
+}
+$("#setNope").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-nope]");
+  if (!b) return;
+  const [oid, i] = b.dataset.nope.split(":"), it = items.find((x) => x.id === oid);
+  if (!it) return;
+  const { id, ...data } = it, nope = (data.nope || []).filter((_, k) => k !== +i);
+  b.disabled = true;
+  try { await itemStore.set(id, { ...data, nope }); toast("취소했어요. 이 코디도 다시 추천해요"); }
+  catch (err) { console.error(err); b.disabled = false; toast("저장하지 못했어요"); }
+});
 $("#setStart").addEventListener("change", () => { S.start = +$("#setStart").value; saveS(); recKey = ""; renderHome(); });
 $("#setEnd").addEventListener("change", () => { S.end = +$("#setEnd").value; saveS(); recKey = ""; renderHome(); });
 $("#setGps").addEventListener("click", async () => { S.place = { ...DEFAULT_PLACE, mode: "gps" }; saveS(); renderSet(); await start(true); toast("현재 위치로 바꿨어요"); });
@@ -1288,6 +1351,7 @@ function refresh() {
   if (view === "home") renderHome();
   if (view === "closet") renderCloset();
   if (view === "log") renderLogs();
+  if (view === "set") renderNope();
 }
 async function start(force = false) {
   try { await loadWeather(force); } catch (e) { console.error(e); if (!wx) toast("날씨를 불러오지 못했어요"); }

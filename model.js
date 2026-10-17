@@ -1,5 +1,5 @@
 // 추천 계산: 날씨 → 필요한 따뜻함 → 내 옷장에서 고르기, 그리고 기록으로 나에게 맞추기
-import { CATS, TYPES, typeOf, lenOf, lenKind, hemOf, lenWarmAdj, sheerAdj, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash, innerChoices, isHeatInner, HEAT_MAX, pointCount } from "./catalog.js";
+import { CATS, TYPES, typeOf, lenOf, lenKind, hemOf, lenWarmAdj, sheerAdj, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash, innerChoices, isHeatInner, HEAT_MAX, pointCount, seasonsOf } from "./catalog.js";
 
 // ---------- 따뜻함 점수 ----------
 // 옷 하나의 따뜻함 = 두께(1~5) × 부위 무게. 겉옷이 제일 커요.
@@ -135,10 +135,27 @@ function allowed(it, t) {
   return true;
 }
 
+// 그날의 계절: 달로 정하고(6~8월 여름, 12~2월 겨울, 나머지 봄·가을), 날씨가 유난하면 더해요
+//  (5월인데 23° 넘으면 여름 옷도, 11월인데 5° 아래면 겨울 옷도 OK)
+export function daySeasons(date, t) {
+  const m = +date.slice(5, 7), s = new Set();
+  s.add(m >= 6 && m <= 8 ? "summer" : m === 12 || m <= 2 ? "winter" : "spring");
+  if (t >= 23) s.add("summer");
+  if (t <= 5) s.add("winter");
+  return s;
+}
+// 여름용·겨울용으로만 정한 옷(봄·가을이 안 켜진 옷)은 그 계절에만 골라요. 봄·가을이 켜진 옷은 날씨로만 따져요.
+const seasonOk = (it, season) => { const s = seasonsOf(it); return s.includes("spring") || s.some((x) => season.has(x)); };
+
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; }
 
 // 따뜻함 차이 → 벌점. 추운 것보다 조금 더운 게 나아요
 const miss = (d) => d * d + (d < 0 ? 0.4 * d * d : 0);
+
+const sameSet = (a, b) => a.length === b.length && b.every((id) => a.includes(id));
+// 코디 → 겉에 보이는 옷(상의·하의·원피스·겉옷) id들. '마음에 안 들어요'·최근 코디 비교에 써요 (이너·신발·소품은 빼요)
+const MAIN = ["top", "bottom", "dress", "outer"];
+export const mainIds = (list, inner = layers(list).inner) => list.filter((x) => x && x !== inner && MAIN.includes(typeOf(x.type).cat)).map((x) => x.id);
 
 // 결과: [{ items:[…], W, cost }] 좋은 순서
 //  slots: [{ T, want }] 아침·낮·저녁 (두 개 이상이면 시간대마다 따져요)
@@ -149,10 +166,13 @@ const miss = (d) => d * d + (d < 0 ? 0.4 * d * d : 0);
 //     상의에 '어떤 이너'를 골라 뒀으면 그중에서 (히트텍은 쌀쌀한 날만).
 //   → 포인트 옷은 한 코디에 하나만. 그런 조합밖에 없을 때만 보여 줘요.
 //   → recentFits: 최근(5일 안) 입은 코디들 [옷 id Set] — 같은 코디는 되도록 다시 안 골라요.
-export function recommend({ items, t, want, date, recent = new Set(), recentFits = [], skip = new Set(), slots = null }) {
+//   → nope: '마음에 안 들어요'를 누른 코디들 [[옷 id…]] — 겉에 보이는 옷이 똑같은 코디는 아예 안 골라요.
+//   → 여름용·겨울용으로만 정한 옷은 다른 계절엔 안 골라요(daySeasons).
+export function recommend({ items, t, want, date, recent = new Set(), recentFits = [], nope = [], skip = new Set(), slots = null }) {
   const bySlot = slots && slots.length >= 2;
   const usable = items.filter((it) => !it.away && !skip.has(it.id));
-  const ok = usable.filter((it) => allowed(it, t));
+  const season = daySeasons(date, t);
+  const ok = usable.filter((it) => allowed(it, t) && seasonOk(it, season));
   const by = (cat) => ok.filter((it) => typeOf(it.type).cat === cat);
   const tops = by("top"), bottoms = by("bottom"), dresses = by("dress"), outers = by("outer"), shoes = by("shoes"), accs = by("acc");
   const shirtOuters = t <= 28 ? tops.filter(canShirtOuter) : [];
@@ -167,8 +187,6 @@ export function recommend({ items, t, want, date, recent = new Set(), recentFits
     return c.map((x) => [x, score(x)]).sort((a, b) => a[1] - b[1]).slice(0, 3);
   };
   // 최근 입은 코디와 같은지: 겉에 보이는 옷(상의·하의·원피스·겉옷)만 비교해요
-  const MAIN = ["top", "bottom", "dress", "outer"];
-  const mainIds = (list, inner) => list.filter((x) => x !== inner && MAIN.includes(typeOf(x.type).cat)).map((x) => x.id);
   const byItem = Object.fromEntries(items.map((x) => [x.id, x]));
   const fits = recentFits.map((s) => { const l = [...s].map((id) => byItem[id]).filter(Boolean); return mainIds(l, layers(l).inner); });
   const bases = [];
@@ -219,7 +237,8 @@ export function recommend({ items, t, want, date, recent = new Set(), recentFits
       cost += 0.6 * innerCost;   // 옷 색과 덜 어울리는 이너는 조금 덜
       // 최근 5일 안에 입은 코디: 똑같으면 많이, 상의+하의(원피스)가 같으면 조금 덜
       const mine = mainIds(list, inner), baseIds = bse.map((x) => x.id);
-      if (fits.some((f) => f.length === mine.length && mine.every((id) => f.includes(id)))) cost += 4;
+      if (nope.some((f) => sameSet(f, mine))) continue;   // 마음에 안 든다고 한 코디
+      if (fits.some((f) => sameSet(f, mine))) cost += 4;
       else if (fits.some((f) => baseIds.every((id) => f.includes(id)))) cost += 1.5;
       for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes" && it !== inner) cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
       cost += hash(date + list.map((x) => x.id).join()) * 0.8;   // 같은 날엔 같은 순서, 날마다 조금씩 다르게
