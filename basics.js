@@ -1,4 +1,4 @@
-// 기본 옷 그림 (나시·반팔·긴팔 티셔츠) — 고른 색으로 그때그때 그려요.
+// 기본 옷 그림 (나시·반팔·긴팔 티셔츠·히트텍 상하의·스타킹) — 고른 색으로 그때그때 그려요.
 //  basicSvg(kind, "#색") → svg 글자,  basicCanvas(kind, "#색") → 저장용 canvas
 //  미리 보기: 도구/basics.html
 
@@ -6,6 +6,9 @@ export const BASIC_KINDS = [
   { id: "tank", type: "sleeveless", ko: "나시" },
   { id: "tee",  type: "tee_s",      ko: "반팔 티셔츠" },
   { id: "long", type: "tee_l",      ko: "긴팔 티셔츠" },
+  { id: "heattop",    type: "heat_top",    ko: "히트텍 상의" },
+  { id: "heatbottom", type: "heat_bottom", ko: "히트텍 하의" },
+  { id: "stockings",  type: "stockings",   ko: "스타킹", colors: ["흰색", "살구색", "검정", "커피색"] },   // colors: 고를 수 있는 색 (없으면 전부)
 ];
 // 예전 기본 옷(색마다 따로 있던 것) → 새 이름
 export const OLD_BASIC = { "tank-black": "tank:검정", "tank-white": "tank:흰색", "tank-nude": "tank:베이지", "tee-black": "tee:검정", "tee-white": "tee:흰색" };
@@ -49,6 +52,39 @@ const SHAPES = {
     under: [[300, 406], [724, 406]],
     folds: ["M360 480 Q380 640 352 820", "M664 500 Q646 660 672 820", "M500 360 Q524 560 504 770"],
   },
+  // 히트텍 상의: 몸에 붙는 얇은 긴팔 (몸판·소매가 좁고, 소매 끝 시보리가 얇아요)
+  heattop: {
+    body: "M440 176 Q512 198 584 176 L708 200 C748 230 790 380 818 560 L846 760 L780 772 L752 580 C732 470 712 420 690 400 C694 560 694 710 692 846 Q512 864 332 846 C330 710 330 560 334 400 C312 420 292 470 272 580 L244 772 L178 760 L206 560 C234 380 276 230 316 200 Z",
+    neck: "M440 176 Q512 198 584 176 C572 236 452 236 440 176 Z",
+    neckLine: "M440 176 C452 236 572 236 584 176",
+    neckStitch: "M446 198 C460 254 564 254 578 198",
+    sleeves: ["M316 200 C276 230 234 380 206 560 L178 760 L244 772 L272 580 C292 470 312 420 334 400 C326 320 320 250 316 200 Z",
+              "M708 200 C748 230 790 380 818 560 L846 760 L780 772 L752 580 C732 470 712 420 690 400 C698 320 704 250 708 200 Z"],
+    seams: ["M334 400 C326 320 320 250 316 200", "M690 400 C698 320 704 250 708 200"],
+    cuffs: ["M182 734 L248 746 L244 772 L178 760 Z", "M842 734 L776 746 L780 772 L846 760 Z"],
+    hem: "M332 822 Q512 840 692 822",
+    under: [[334, 402], [690, 402]],
+    folds: ["M392 480 Q406 640 386 820", "M632 500 Q618 660 638 820", "M222 600 Q230 660 216 720", "M802 600 Q794 660 808 720"],
+  },
+  // 히트텍 하의: 레깅스 모양 (허리 밴드 + 발목까지 좁아지는 두 다리)
+  heatbottom: {
+    body: "M360 150 L664 150 L684 330 C690 520 650 700 632 900 L552 900 C548 700 530 520 512 410 C494 520 476 700 472 900 L392 900 C374 700 334 520 340 330 Z",
+    waist: "M360 150 L664 150 L669 204 L355 204 Z", waistStitch: "M358 192 L666 192",
+    seams: ["M512 204 L512 410"],
+    legHems: ["M396 878 L470 878", "M554 878 L628 878"],
+    under: [[512, 380]],
+    folds: ["M402 460 Q422 620 410 840", "M622 460 Q602 620 614 840", "M470 560 Q462 700 466 860", "M554 560 Q562 700 558 860"],
+  },
+  // 스타킹: 발까지 있는 팬티스타킹 (윗부분은 조금 진하고, 발끝도 진하게, 살짝 비쳐요)
+  stockings: {
+    body: "M372 120 L652 120 C668 200 676 260 672 330 C664 520 628 680 612 820 C612 850 640 870 690 878 C716 882 718 910 690 912 L560 912 C548 880 546 850 544 820 C536 660 524 520 512 420 C500 520 488 660 480 820 C478 850 476 880 464 912 L334 912 C306 910 308 882 334 878 C384 870 412 850 412 820 C396 680 360 520 352 330 C348 260 356 200 372 120 Z",
+    waist: "M372 120 L652 120 L657 162 L367 162 Z", waistStitch: "M369 152 L655 152",
+    panty: "M367 162 L657 162 C668 230 674 290 672 330 L512 430 L352 330 C350 290 356 230 367 162 Z",
+    toes: [[676, 896], [348, 896]],
+    under: [[512, 400]],
+    folds: ["M410 420 Q428 600 420 800", "M614 420 Q596 600 604 800"],
+    sheer: 0.78,
+  },
 };
 
 // 색 계산: hex → [r,g,b], 섞기, 밝기
@@ -76,6 +112,10 @@ export function basicSvg(kind, color, id = "b") {
   if (S.cuffs) details += S.cuffs.map((d) => `<path d="${d}" fill="${rib}"/>${s(d, 2, stitch)}`).join("");
   if (S.cuffStitch) details += S.cuffStitch.map((d, i) => `<g clip-path="url(#${id}sl${i})">${s(d, 2.5, stitch, dash)}</g>`).join("");
   if (S.seams) details += S.seams.map((d) => s(d, 3, stitch)).join("");
+  if (S.panty) details += `<path d="${S.panty}" fill="#000" opacity="${dark ? 0.25 : 0.1}"/>`;
+  if (S.toes) details += S.toes.map(([x, y]) => `<ellipse cx="${x}" cy="${y}" rx="34" ry="22" fill="#000" opacity="${dark ? 0.25 : 0.1}"/>`).join("");
+  if (S.waist) details += `<path d="${S.waist}" fill="${rib}"/>` + s(S.waistStitch, 2.5, stitch, dash);
+  if (S.legHems) details += S.legHems.map((d) => s(d, 2.5, stitch, dash)).join("");
   if (S.arms) details += S.arms.map((d) => s(d, 14, rib) + s(d, 2.5, stitch, `${dash} transform="translate(${d.includes("M400") ? 14 : -14} 0)"`)).join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
 <defs>
@@ -92,6 +132,7 @@ export function basicSvg(kind, color, id = "b") {
   <filter id="${id}b" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="22"/></filter>
   <filter id="${id}n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 ${dark ? 0.1 : 0.07} 0"/></filter>
 </defs>
+<g ${S.sheer ? `opacity="${S.sheer}"` : ""}>
 <path d="${S.body}" fill="${color}" filter="url(#${id}s)"/>
 <g clip-path="url(#${id}c)">
   ${details}
@@ -100,13 +141,12 @@ export function basicSvg(kind, color, id = "b") {
   <rect width="1024" height="1024" fill="url(#${id}h)"/>
   <rect width="1024" height="1024" fill="url(#${id}v)"/>
   <rect width="1024" height="1024" filter="url(#${id}n)" style="mix-blend-mode:overlay"/>
-  <path d="${S.neck}" fill="${inside}"/>
-  ${s(S.neckLine, 26, rib)}
-  ${s(S.neckStitch, 2.5, stitch, dash)}
-  ${s(S.hem, 2.5, stitch, dash)}
+  ${S.neck ? `<path d="${S.neck}" fill="${inside}"/>${s(S.neckLine, 26, rib)}${s(S.neckStitch, 2.5, stitch, dash)}` : ""}
+  ${S.hem ? s(S.hem, 2.5, stitch, dash) : ""}
 </g>
 <path d="${S.body}" fill="none" stroke="${edge}" stroke-width="3" stroke-linejoin="round"/>
-${s(S.neckLine, 2.5, edge)}
+${S.neck ? s(S.neckLine, 2.5, edge) : ""}
+</g>
 </svg>`;
 }
 

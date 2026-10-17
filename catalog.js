@@ -16,6 +16,7 @@ export const TYPES = [
   { id: "tee_s",       ko: "반팔 티셔츠",     cat: "top",    warm: 1, en: ["a short sleeve t-shirt", "a short-sleeved crew neck tee"] },
   { id: "sleeveless",  ko: "민소매",          cat: "top",    warm: 1, en: ["a sleeveless tank top", "a sleeveless top"] },
   { id: "tee_l",       ko: "긴팔 티셔츠",     cat: "top",    warm: 2, en: ["a long sleeve t-shirt", "a long-sleeved jersey top"] },
+  { id: "heat_top",    ko: "히트텍 상의",     cat: "top",    warm: 2 },   // 이너로만 (AI 글자 계산 없음 — 기본 옷으로 넣거나 직접 골라요)
   { id: "shirt",       ko: "셔츠·블라우스",   cat: "top",    warm: 2, en: ["a button-up collared shirt", "a women's blouse"] },
   { id: "sweatshirt",  ko: "맨투맨",          cat: "top",    warm: 3, en: ["a crewneck sweatshirt", "a cotton fleece pullover sweatshirt"] },
   { id: "hoodie",      ko: "후드티",          cat: "top",    warm: 3, en: ["a hoodie with a hood", "a hooded sweatshirt"] },
@@ -34,6 +35,8 @@ export const TYPES = [
   { id: "slacks",      ko: "슬랙스·면바지",   cat: "bottom", warm: 2, en: ["dress trousers", "chino pants"] },
   { id: "jeans",       ko: "청바지",          cat: "bottom", warm: 3, en: ["blue jeans", "denim pants"] },
   { id: "jogger",      ko: "트레이닝 바지",   cat: "bottom", warm: 2, en: ["track pants", "jogger sweatpants"] },
+  { id: "heat_bottom", ko: "히트텍 하의",     cat: "bottom", warm: 2 },   // 바지 안 이너, 치마·원피스 밑엔 스타킹 대신
+  { id: "stockings",   ko: "스타킹",          cat: "bottom", warm: 1 },   // 치마·원피스·반바지 밑에
   { id: "dress",       ko: "원피스",          cat: "dress",  warm: 2, en: ["a dress", "a one-piece dress"] },
   { id: "sneakers",    ko: "운동화",          cat: "shoes",  warm: 2, en: ["sneakers", "running shoes"] },
   { id: "sandals",     ko: "샌들·슬리퍼",     cat: "shoes",  warm: 1, en: ["sandals", "flip flops slippers"] },
@@ -94,13 +97,15 @@ export const SHEER = [
 ];
 export const sheerAdj = (it) => SHEER.find((x) => x.id === it.sheer)?.adj || 0;
 // 비침은 상의·겉옷·하의·원피스, 이너 필요는 상의·하의·원피스만 골라요
-export const hasSheer = (type) => ["top", "outer", "bottom", "dress"].includes(typeOf(type).cat);
-export const hasInner = (type) => ["top", "bottom", "dress"].includes(typeOf(type).cat);
+//  (안에 입는 히트텍·스타킹은 둘 다 없어요)
+const LAYER_ONLY = ["heat_top", "heat_bottom", "stockings"];
+export const hasSheer = (type) => ["top", "outer", "bottom", "dress"].includes(typeOf(type).cat) && !LAYER_ONLY.includes(typeOf(type).id);
+export const hasInner = (type) => ["top", "bottom", "dress"].includes(typeOf(type).cat) && !LAYER_ONLY.includes(typeOf(type).id);
 
 // 색 (옷장 색 고르기 순서대로). 여러색은 맨 끝.
 export const COLORS = {
   검정: "#222", 차콜: "#3d3f45", 회색: "#999", 연회색: "#c4c5c8", 흰색: "#fff", 아이보리: "#f6f0dc",
-  베이지: "#e3d3b5", 카멜: "#b8864b", 갈색: "#7a5232", 카키: "#6b6b3a", 올리브: "#5f6f2e",
+  베이지: "#e3d3b5", 살구색: "#f2c4a4", 카멜: "#b8864b", 갈색: "#7a5232", 커피색: "#8b6650", 카키: "#6b6b3a", 올리브: "#5f6f2e",
   초록: "#3f9a5a", 민트: "#9fe0c9", 하늘색: "#8cc7ef", 연청: "#8fb0d6", 진청: "#2f4f7f", 파랑: "#2f6fd6", 네이비: "#1f2d4d",
   라벤더: "#c6b5e8", 보라: "#8a5cc7", 분홍: "#f2a2b8", 코랄: "#f4846c", 빨강: "#d33", 와인: "#6e1f2f",
   주황: "#f08a3c", 머스타드: "#d2a227", 노랑: "#f2d24b",
@@ -119,7 +124,17 @@ export const typeOf = (id) => TYPES.find((t) => t.id === id) || TYPES[0];
 
 // ---------- 이너·겉옷 대용 ----------
 // 이너로 입을 수 있는 옷: 안 비치는 나시·반팔 티셔츠 (+ 이름에 '히트텍'이 들어간 옷, 아래 이너 고르기용 옷)
-const isHeat = (it) => /히트텍/.test(it.name || "");
+//  히트텍 상의: 종류가 '히트텍 상의'이거나 이름에 '히트텍'이 들어간 상의
+const isHeat = (it) => typeOf(it.type).cat === "top" && (typeOf(it.type).id === "heat_top" || /히트텍/.test(it.name || ""));
+// 다리에 신는 옷: 히트텍 하의(바지 안 이너, 치마 밑엔 스타킹 대신)·스타킹
+const LEGWEAR = ["heat_bottom", "stockings"];
+export const isLegwear = (it) => LEGWEAR.includes(typeOf(it.type).id);
+export const STOCKING_MAX = 20;   // 스타킹은 이 온도 이하인 날만 (히트텍 하의는 HEAT_MAX 이하)
+// 안에만 입는 옷: 나시·히트텍·스타킹 — 혼자(상의·하의 자리) 추천하지 않고, 무늬·포인트·최근 코디 비교에서도 빼요
+export const innerOnly = (it) => typeOf(it.type).id === "sleeveless" || isHeat(it) || isLegwear(it);
+export const isHeatTop = (it) => isHeat(it);
+// 이 하의(원피스) 밑엔 스타킹을 신어요: 치마·원피스, 짧은·무릎 기장. 긴 바지면 히트텍 하의만 안에.
+export const stockingBase = (b) => typeOf(b.type).cat === "dress" || typeOf(b.type).id === "skirt" || lenOf(b) !== "long";
 export const canInner = (it) => !!it.virtual || ((["sleeveless", "tee_s"].includes(typeOf(it.type).id) || isHeat(it)) && !it.inner && (it.sheer || "none") === "none");
 
 // 이너 필요한 상의에서 '어떤 이너를 입을지' 고르기 (여러 개 가능, 저장 이름 innerPick)
@@ -129,7 +144,7 @@ export const INNER_PICKS = [
   { id: "tank_b", ko: "검정 나시",   type: "sleeveless", color: "검정", basic: "tank" },
   { id: "tee_w",  ko: "흰색 티셔츠", type: "tee_s",      color: "흰색", basic: "tee" },
   { id: "tee_b",  ko: "검정 티셔츠", type: "tee_s",      color: "검정", basic: "tee" },
-  { id: "heat",   ko: "히트텍",      type: "tee_l",      color: "베이지", basic: "long", warm: 1.5 },
+  { id: "heat",   ko: "히트텍",      type: "heat_top",   color: "베이지", basic: "heattop", warm: 1.5 },
 ];
 export const HEAT_MAX = 15;
 // 목록의 옷 (늘 같은 물건이라 코디 안에서 비교할 수 있어요). 사진(photo)은 index.html이 그려 넣어요.
@@ -147,7 +162,7 @@ export function innerChoices(main, items) {
 export const isHeatInner = (x) => x.pick === "heat" || isHeat(x);
 
 // 포인트 옷: 눈에 띄는 옷은 한 코디에 하나만 (안에 입는 이너는 안 세요)
-export const pointCount = (list, skip = []) => list.filter((it) => it.point && !skip.includes(it)).length;
+export const pointCount = (list, skip = []) => list.filter((it) => it.point && !skip.includes(it) && !innerOnly(it)).length;
 // 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신 입을 수 있어요.
 //  옷마다 '겉옷으로도 입기'(asOuter)로 정해요 — 비치는 셔츠도 사용자가 켜 두면 골라요. 예전에 넣은 셔츠는 켜진 걸로 봐요.
 export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && it.asOuter !== false;
@@ -160,7 +175,7 @@ export const BUSY = ["stripe", "check", "floral"];
 export function patternClash(list, skip = []) {
   let first = null;
   for (const it of list) {
-    if (skip.includes(it) || typeOf(it.type).cat === "shoes" || !BUSY.includes(it.pattern)) continue;
+    if (skip.includes(it) || innerOnly(it) || typeOf(it.type).cat === "shoes" || !BUSY.includes(it.pattern)) continue;
     if (first) return [first, it.pattern];
     first = it.pattern;
   }
@@ -169,26 +184,32 @@ export function patternClash(list, skip = []) {
 
 // 코디 하나에서 누가 겉옷이고 누가 이너인지 알아내요 (추천·직접 고르기·기록 모두 같은 방법)
 //  outer: 겉옷(없으면 티셔츠 위에 걸친 셔츠), inner: 비치는 옷 안에 입은 나시·반팔,
-//  noInner: 이너가 필요한데 없는 상의·원피스, bottomInner: 속바지·속치마가 필요한 하의
+//  noInner: 이너가 필요한데 없는 상의·원피스, bottomInner: 속바지·속치마가 필요한 하의,
+//  legs: 히트텍 하의·스타킹, legUnder: 긴 바지 안에 입었는지(아니면 치마·원피스 밑 스타킹 자리)
 export function layers(list) {
   const cat = (it) => typeOf(it.type).cat;
   const tops = list.filter((it) => cat(it) === "top");
   let outer = list.find((it) => cat(it) === "outer") || null, shirtOuter = false;
   // 겉옷이 없으면: 티셔츠·나시(또는 원피스) 위의 셔츠가 겉옷 대신 (셔츠 밑에 니트 등이 있으면 셔츠는 안에 입은 것)
   if (!outer) {
-    const shirt = [...tops].reverse().find(canShirtOuter);
-    const under = tops.filter((x) => x !== shirt);
+    // (나시·히트텍만 밑에 있으면 셔츠를 그 위에 입은 것 — 겉옷 대신 아님)
+    const wear = tops.filter((x) => !innerOnly(x));
+    const shirt = [...wear].reverse().find(canShirtOuter);
+    const under = wear.filter((x) => x !== shirt);
     if (shirt && (under.length ? under.every((x) => SHIRT_BASE.includes(typeOf(x.type).id)) : list.some((x) => cat(x) === "dress"))) { outer = shirt; shirtOuter = true; }
   }
   // 겉옷 대신 걸친 셔츠는 비쳐도 이너를 따로 찾지 않아요 (밑에 입은 옷이 있으니까)
   const needer = list.find((it) => it.inner && it !== (shirtOuter ? outer : null) && (cat(it) === "top" || cat(it) === "dress"));
   let inner = null;
+  if (!needer) inner = tops.find((x) => isHeat(x) && x !== outer) || null;   // 히트텍은 비치지 않는 옷 안에도
   if (needer) inner = tops.filter((x) => x !== needer && x !== (shirtOuter ? outer : null) && canInner(x)).sort((a, b) => (a.virtual ? 0 : 1) - (b.virtual ? 0 : 1) || (typeOf(a.type).id === "sleeveless" ? 0 : 1) - (typeOf(b.type).id === "sleeveless" ? 0 : 1))[0] || null;
-  return { outer, shirtOuter, inner, noInner: needer && !inner ? needer : null, bottomInner: list.filter((it) => it.inner && cat(it) === "bottom") };
+  const legs = list.filter(isLegwear), legBase = list.find((it) => (cat(it) === "bottom" && !isLegwear(it)) || cat(it) === "dress");
+  return { outer, shirtOuter, inner, noInner: needer && !inner ? needer : null, bottomInner: list.filter((it) => it.inner && cat(it) === "bottom"), legs, legUnder: !!legBase && !stockingBase(legBase) };
 }
 
 // 이 종류가 어떤 길이를 갖는지: "sleeve" | "leg" | null
-export const lenKind = (type) => { const c = typeOf(type).cat; return c === "bottom" ? "leg" : c === "top" || c === "outer" || c === "dress" ? "sleeve" : null; };
+//  (히트텍 하의·스타킹은 늘 발목까지라 길이를 안 골라요)
+export const lenKind = (type) => { const c = typeOf(type).cat; if (LEGWEAR.includes(typeOf(type).id)) return null; return c === "bottom" ? "leg" : c === "top" || c === "outer" || c === "dress" ? "sleeve" : null; };
 export const defaultLen = (type) => (lenKind(type) ? LEN_DEFAULT[typeOf(type).id] || "long" : null);
 // 옷의 길이 (예전에 넣은 옷은 종류의 기본 길이)
 export const lenOf = (it) => (lenKind(it.type) ? it.len || defaultLen(it.type) : null);
@@ -224,6 +245,7 @@ export function guessSeasons(it) {
   if (t.cat === "shoes") return id === "sandals" ? ["summer"] : id === "boots" ? ["spring", "winter"] : ["spring", "summer", "winter"];
   if (t.cat === "acc") return ["winter"];
   if (id === "padding") return ["winter"];
+  if (["heat_top", "heat_bottom", "stockings"].includes(id)) return ["spring", "winter"];
   if (id === "coat") return ["spring", "winter"];
   const w = (it.warm || t.warm) + lenWarmAdj(it) + sheerAdj(it);
   const short = ["short", "sleeveless"].includes(lenOf(it)) || hemOf(it) === "short";

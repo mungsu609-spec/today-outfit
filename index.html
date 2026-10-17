@@ -307,7 +307,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 })();
 </script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount, innerOnly, isLegwear } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
@@ -514,7 +514,10 @@ function renderHome() {
 // 코디 사진들 + 이너·겉옷 대신 표시 + 이너 챙기기 알림
 function piecesHtml(list) {
   const L = layers(list);
-  const role = (it) => it === L.inner ? "이너" : it === L.outer && L.shirtOuter ? "겉옷 대신" : "";
+  // 나시·히트텍 상의는 이너, 히트텍 하의는 바지 안이면 이너·치마 밑이면 스타킹 대신
+  const role = (it) => it === L.inner || (innerOnly(it) && typeOf(it.type).cat === "top") ? "이너"
+    : isLegwear(it) ? (L.legUnder ? "이너" : typeOf(it.type).id === "heat_bottom" ? "스타킹 대신" : "")
+    : it === L.outer && L.shirtOuter ? "겉옷 대신" : "";
   const notes = [];
   if (L.noInner) notes.push(L.noInner.innerPick?.length && typeOf(L.noInner.type).cat === "top"
     ? `💡 '${esc(L.noInner.name)}' 안에 이너를 같이 입으면 좋아요. (골라 둔 이너가 ${L.noInner.innerPick.every((x) => x === "heat") ? `히트텍뿐이라 ${HEAT_MAX}°보다 따뜻한 날엔 안 골랐어요` : "이 코디엔 안 맞았어요"})`
@@ -660,7 +663,7 @@ function renderCloset() {
 $("#seasonChips").addEventListener("click", (e) => { const b = e.target.closest("[data-season]"); if (!b) return; seasonFilter = b.dataset.season; ls.set("wx.season", seasonFilter); renderCloset(); });
 $("#catChips").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catFilter = b.dataset.cat; ls.set("wx.cat", catFilter); renderCloset(); });
 $("#closetGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) openEditor(byId[b.dataset.id]); });
-// 기본 옷: 종류(나시·반팔·긴팔 티셔츠)를 누르고 색을 고르면 바로 옷장에 들어가요. 그림은 basics.js가 고른 색으로 그려요.
+// 기본 옷: 종류(나시·반팔·긴팔 티셔츠·히트텍 상하의·스타킹)를 누르고 색을 고르면 바로 옷장에 들어가요. 그림은 basics.js가 고른 색으로 그려요.
 const basicKey = (it) => OLD_BASIC[it.basic] || it.basic;   // 예전 'tank-black' → 'tank:검정'
 const BASIC_COLORS = Object.keys(COLORS).filter((k) => k !== "여러색");
 const basicName = (k, color) => `${color} ${k.ko}`;
@@ -691,11 +694,12 @@ function openAdd() {
 }
 // 기본 옷 색 고르기: 그림이 고른 색으로 바로 바뀌어요. 옷장에 이미 있는 색엔 ✓
 function openBasic(k, color = null) {
+  const colors = k.colors || BASIC_COLORS;   // 스타킹은 흰색·살구색·검정·커피색만
   const have = (c) => items.some((it) => basicKey(it) === `${k.id}:${c}`);
   openSheet(`<div class="sheet-head"><h2>${k.ko}</h2><button class="btn ghost" data-x="back">← 뒤로</button></div>
     <div class="preview"><img id="bPrev" src="${basicUrl(k.id, color ? COLORS[color] : "#e9e6e1")}" alt=""></div>
     <label class="f">색 고르기</label>
-    <div class="chips">${BASIC_COLORS.map((c) => `<button class="chip${c === color ? " on" : ""}" data-c="${c}"><span class="color-dot" style="background:${COLORS[c]}"></span>${c === "베이지" ? "베이지(누드)" : c}${have(c) ? " ✓" : ""}</button>`).join("")}</div>
+    <div class="chips">${colors.map((c) => `<button class="chip${c === color ? " on" : ""}" data-c="${c}"><span class="color-dot" style="background:${COLORS[c]}"></span>${c === "베이지" ? "베이지(누드)" : c}${have(c) ? " ✓" : ""}</button>`).join("")}</div>
     <p class="muted">✓ = 옷장에 이미 있는 색. 두께 등은 넣은 뒤 옷장에서 눌러서 고칠 수 있어요.</p>
     <button class="btn primary block" data-x="add" ${color ? "" : "disabled"}>${color ? `${basicName(k, color)} 옷장에 넣기` : "색을 골라 주세요"}</button>`, async (e) => {
     const c = e.target.closest("[data-c]")?.dataset.c;
