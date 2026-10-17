@@ -106,10 +106,19 @@ export function cutout(src) {
   return c;
 }
 
-// ---------- 사진 맞추기 (돌리기·기울이기·확대·옮기기) ----------
-// 상태 st = { rot: 90° 단위 돌리기, tilt: 살짝 기울이기(°), z: 확대(1 = 사진 긴 쪽이 네모에 꽉), x, y: 가운데에서 옮긴 정도(네모 크기 1 기준) }
+// ---------- 사진 맞추기 (돌리기·기울이기·확대·옮기기·원근) ----------
+// 상태 st = { rot: 90° 단위 돌리기, tilt: 살짝 기울이기(°), z: 확대(1 = 사진 긴 쪽이 네모에 꽉), x, y: 가운데에서 옮긴 정도(네모 크기 1 기준),
+//            pv: 세로 원근(-40~40, +면 위가 넓어져요), ph: 가로 원근(-40~40, +면 오른쪽이 넓어져요) }
 // 네모(size×size) 안에 보이는 그대로 그려요. 저장할 때도 같은 함수로 그려서 화면과 똑같이 나와요.
+const PK = 1 / 50;   // 원근 막대 1칸의 세기
+// 네모 위 점(가운데 기준, 네모 크기 1) → 사진 픽셀 자리. 원근은 네모 가운데를 기준으로 사다리꼴로 펴요.
+export function frameToSrc(st, W, H, nx, ny) {
+  const d = 1 + (st.ph || 0) * PK * nx - (st.pv || 0) * PK * ny;
+  const px = st.z / Math.max(W, H), [u, v] = turn(nx / d - st.x, ny / d - st.y, -(st.rot + st.tilt));
+  return [u / px + W / 2, v / px + H / 2];
+}
 export function paintFrame(g, size, src, st, W = src.width, H = src.height) {
+  if (st.pv || st.ph) return paintWarp(g, size, src, st, W, H);
   const px = (st.z * size) / Math.max(W, H);
   g.clearRect(0, 0, size, size);
   g.save();
@@ -121,6 +130,35 @@ export function paintFrame(g, size, src, st, W = src.width, H = src.height) {
   g.restore();
 }
 
+// 원근이 있을 때: 네모를 작은 삼각형 조각으로 나눠서, 조각마다 사진의 맞는 자리를 붙여 그려요
+function paintWarp(g, size, src, st, W, H) {
+  const N = size > 600 ? 24 : 16, s = size / N;
+  const P = [];
+  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) P.push([i * s, j * s, ...frameToSrc(st, W, H, i / N - 0.5, j / N - 0.5)]);
+  g.clearRect(0, 0, size, size);
+  g.imageSmoothingQuality = "high";
+  const tri = (A, B, C) => {
+    const out = (k, lim) => (A[k] < 0 && B[k] < 0 && C[k] < 0) || (A[k] > lim && B[k] > lim && C[k] > lim);
+    if (out(2, W) || out(3, H)) return;   // 사진 밖 조각은 건너뛰기
+    const du1 = B[2] - A[2], dv1 = B[3] - A[3], du2 = C[2] - A[2], dv2 = C[3] - A[3], det = du1 * dv2 - du2 * dv1;
+    if (Math.abs(det) < 1e-9) return;
+    const dX1 = B[0] - A[0], dY1 = B[1] - A[1], dX2 = C[0] - A[0], dY2 = C[1] - A[1];
+    const a = (dX1 * dv2 - dX2 * dv1) / det, c = (dX2 * du1 - dX1 * du2) / det, b = (dY1 * dv2 - dY2 * dv1) / det, d = (dY2 * du1 - dY1 * du2) / det;
+    // 조각 사이 틈이 안 보이게 조금 크게 잘라요
+    const cx = (A[0] + B[0] + C[0]) / 3, cy = (A[1] + B[1] + C[1]) / 3;
+    const grow = (p) => { const l = Math.hypot(p[0] - cx, p[1] - cy) || 1; return [p[0] + ((p[0] - cx) / l) * 0.6, p[1] + ((p[1] - cy) / l) * 0.6]; };
+    g.save();
+    g.beginPath(); g.moveTo(...grow(A)); g.lineTo(...grow(B)); g.lineTo(...grow(C)); g.closePath(); g.clip();
+    g.setTransform(a, b, c, d, A[0] - a * A[2] - c * A[3], A[1] - b * A[2] - d * A[3]);
+    g.drawImage(src, 0, 0, W, H);
+    g.restore();
+  };
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const p00 = P[j * (N + 1) + i], p10 = P[j * (N + 1) + i + 1], p01 = P[(j + 1) * (N + 1) + i], p11 = P[(j + 1) * (N + 1) + i + 1];
+    tri(p00, p10, p11); tri(p00, p11, p01);
+  }
+}
+
 // (x, y)를 deg만큼 돌리기 (canvas처럼 시계 방향)
 export function turn(x, y, deg) {
   const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
@@ -129,11 +167,11 @@ export function turn(x, y, deg) {
 
 // 처음 상태: 옷 범위(b)가 네모 가운데에 margin만큼 차게. 옷이 잘리지 않게 여유를 넉넉히 둬요.
 export function fitState(W, H, b, rot = 0, margin = 0.86) {
-  if (!b) return { rot, tilt: 0, z: 0.96, x: 0, y: 0 };
+  if (!b) return { rot, tilt: 0, z: 0.96, x: 0, y: 0, pv: 0, ph: 0 };
   const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1, L = Math.max(W, H);
   const z = (margin * L) / Math.max(bw, bh), px = z / L;   // px: 사진 1픽셀 = 네모의 몇 배
   const [x, y] = turn((W / 2 - (b.x0 + bw / 2)) * px, (H / 2 - (b.y0 + bh / 2)) * px, rot);
-  return { rot, tilt: 0, z, x, y };
+  return { rot, tilt: 0, z, x, y, pv: 0, ph: 0 };
 }
 
 // 그림 주소(dataURL) → canvas
