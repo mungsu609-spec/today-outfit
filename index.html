@@ -202,8 +202,11 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .nope-btn { display: block; margin: 10px auto 0; font-size: 14px; }
 .nope-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
 .nope-row:first-of-type { border-top: 0; }
-.nope-pics { display: grid; grid-template-columns: repeat(2, 36px); gap: 4px; flex-shrink: 0; }
-.nope-pics .ph { width: 36px; height: 36px; border-radius: 8px; background: var(--soft); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 20px; }
+.set-link { display: flex; align-items: center; justify-content: space-between; width: 100%; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; }
+.set-link > span:first-child { display: flex; flex-direction: column; gap: 2px; }
+.set-link > span:last-child { font-size: 22px; }
+.nope-pics { display: grid; grid-template-columns: repeat(3, 32px); gap: 4px; flex-shrink: 0; }
+.nope-pics .ph { width: 32px; height: 32px; border-radius: 8px; background: var(--soft); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 20px; }
 .nope-pics .ph img { width: 100%; height: 100%; object-fit: contain; }
 .nope-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 14px; }
 .nope-txt b { font-weight: 600; overflow-wrap: anywhere; }
@@ -307,7 +310,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
-import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints, mainIds } from "./model.js";
+import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
 const VERSION = "v9";
 const CFG = window.APP_CONFIG || {};
@@ -440,7 +443,8 @@ function hoursInfo(data, date) {
 
 // ---------- 추천 ----------
 let model = { c: 0, d: 0, n: 0 }, recs = [], recIdx = 0, recKey = "", keepIdx = null;
-// '마음에 안 들어요' 기록: 코디의 첫 옷(상의·원피스)에 { ids: 겉에 보이는 옷 id들, at, date }로 붙여 둬요
+// '마음에 안 들어요' 기록: 코디의 첫 옷(상의·원피스)에 { ids: 이너·신발·소품까지 코디 전체 옷 id들, full: true, at, date }로 붙여 둬요
+//  (full이 없는 건 예전 기록 = 겉에 보이는 옷만)
 //  (Firebase 규칙을 안 바꿔도 되고, 그 옷을 지우면 기록도 같이 없어져요)
 const nopeList = () => items.flatMap((it) => (it.nope || []).map((n, i) => ({ ...n, owner: it, i }))).sort((a, b) => b.at - a.at);
 const logOf = (date) => logs.find((g) => g.id === date);
@@ -479,9 +483,9 @@ function renderHome() {
   // 고른 옷이 있으면 그것, 없으면 추천
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
-  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}|${nopeList().map((n) => n.ids.join("+")).join()}`;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}|${nopeList().map((n) => (n.full ? "f" : "") + n.ids.join("+")).join()}`;
   const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
-  if (key !== recKey) { recKey = key; recIdx = keepIdx ?? 0; keepIdx = null; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), recentFits: recentFits(info.date), nope: nopeList().map((n) => n.ids), slots }); }
+  if (key !== recKey) { recKey = key; recIdx = keepIdx ?? 0; keepIdx = null; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), recentFits: recentFits(info.date), nope: nopeList().map((n) => ({ ids: n.ids, full: !!n.full })), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
   const who = day === 0 ? "오늘" : "내일";
   let body;
@@ -594,7 +598,7 @@ $("#outfitCard").addEventListener("click", async (e) => {
     if (!owner || !byId[owner.id] || owner.id.startsWith("inner:")) return;
     const { id, ...data } = items.find((x) => x.id === owner.id);
     keepIdx = recIdx;   // 목록에서 빠지니까 같은 자리 = 다음 코디
-    try { await itemStore.set(id, { ...data, nope: [...(data.nope || []), { ids: mainIds(rec.items), at: Date.now(), date: info.date }] }); toast("이 코디는 다음부터 추천하지 않을게요 (설정에서 취소)"); }
+    try { await itemStore.set(id, { ...data, nope: [...(data.nope || []), { ids: rec.items.map((x) => x.id), full: true, at: Date.now(), date: info.date }] }); toast("이 코디 세트는 다음부터 추천하지 않을게요 (설정에서 취소)"); }
     catch (err) { console.error(err); keepIdx = null; toast("저장하지 못했어요"); }
   }
   if (a === "unpick") { const g = logOf(info.date); if (g) { if (g.feel) await logStore.set(g.id, { ...g, items: [] }); else await logStore.remove(g.id); } }
@@ -1220,27 +1224,33 @@ function renderSet() {
   renderNope();
   aiState();
 }
-// 설정: '마음에 안 들어요'로 뺀 코디 목록 + 취소
+// 설정: '마음에 안 드는 코디' 한 줄 → 누르면 목록 창(취소 가능)
 function renderNope() {
+  const n = nopeList().length;
+  $("#setNope").innerHTML = `<button class="set-link" data-nopes>
+    <span><b>👎 마음에 안 드는 코디</b><small class="muted">${n ? `${n}개 · 추천하지 않는 코디 세트` : "아직 없어요"}</small></span><span class="muted">›</span></button>`;
+}
+$("#setNope").addEventListener("click", (e) => { if (e.target.closest("[data-nopes]")) openNopes(); });
+function openNopes() {
   const L = nopeList();
-  $("#setNope").innerHTML = `<h2>👎 마음에 안 드는 코디 <span class="muted">${L.length ? L.length + "개" : ""}</span></h2>
-    <p class="muted">오늘 화면에서 '마음에 안 들어요'를 누른 코디예요. 이 옷 조합은 추천하지 않아요. 취소하면 다시 추천할 수 있어요.</p>
+  openSheet(`<div class="sheet-head"><h2>👎 마음에 안 드는 코디 <span class="muted">${L.length || ""}</span></h2><button class="btn ghost" data-x="close">닫기</button></div>
+    <p class="muted" style="margin:0 0 6px">오늘 화면에서 '마음에 안 들어요'를 누른 코디예요. 이너·신발까지 똑같은 세트는 추천하지 않아요. 취소하면 다시 추천할 수 있어요.</p>
     ${L.length ? L.map((n) => { const list = n.ids.map((id) => byId[id]).filter(Boolean);
       return `<div class="nope-row"><div class="nope-pics">${list.map((it) => `<div class="ph" title="${esc(it.name)}">${phHtml(it)}</div>`).join("")}</div>
-        <div class="nope-txt"><b>${list.map((it) => esc(it.name)).join(" + ")}</b><span class="muted">${n.date ? md(n.date) : ""}</span></div>
+        <div class="nope-txt"><b>${list.map((it) => esc(it.name)).join(" + ")}</b><span class="muted">${n.date ? md(n.date) : ""}${n.full ? "" : " · 예전 기록(신발·이너 상관없이)"}</span></div>
         <button class="btn" data-nope="${n.owner.id}:${n.i}">취소</button></div>`; }).join("")
-      : `<p class="muted" style="margin:8px 0 0">아직 없어요.</p>`}`;
+      : `<p class="muted" style="margin:8px 0 0">아직 없어요.</p>`}`, async (e) => {
+    if (e.target.closest("[data-x=close]")) return closeSheet();
+    const b = e.target.closest("[data-nope]");
+    if (!b) return;
+    const [oid, i] = b.dataset.nope.split(":"), it = items.find((x) => x.id === oid);
+    if (!it) return;
+    const { id, ...data } = it, nope = (data.nope || []).filter((_, k) => k !== +i);
+    b.disabled = true;
+    try { await itemStore.set(id, { ...data, nope }); toast("취소했어요. 이 코디도 다시 추천해요"); setTimeout(() => { if (!$("#sheetBg").hidden && $("[data-nope]")) openNopes(); }, 300); }
+    catch (err) { console.error(err); b.disabled = false; toast("저장하지 못했어요"); }
+  });
 }
-$("#setNope").addEventListener("click", async (e) => {
-  const b = e.target.closest("[data-nope]");
-  if (!b) return;
-  const [oid, i] = b.dataset.nope.split(":"), it = items.find((x) => x.id === oid);
-  if (!it) return;
-  const { id, ...data } = it, nope = (data.nope || []).filter((_, k) => k !== +i);
-  b.disabled = true;
-  try { await itemStore.set(id, { ...data, nope }); toast("취소했어요. 이 코디도 다시 추천해요"); }
-  catch (err) { console.error(err); b.disabled = false; toast("저장하지 못했어요"); }
-});
 $("#setStart").addEventListener("change", () => { S.start = +$("#setStart").value; saveS(); recKey = ""; renderHome(); });
 $("#setEnd").addEventListener("change", () => { S.end = +$("#setEnd").value; saveS(); recKey = ""; renderHome(); });
 $("#setGps").addEventListener("click", async () => { S.place = { ...DEFAULT_PLACE, mode: "gps" }; saveS(); renderSet(); await start(true); toast("현재 위치로 바꿨어요"); });

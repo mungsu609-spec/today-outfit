@@ -166,10 +166,12 @@ export const mainIds = (list, inner = layers(list).inner) => list.filter((x) => 
 //     상의에 '어떤 이너'를 골라 뒀으면 그중에서 (히트텍은 쌀쌀한 날만).
 //   → 포인트 옷은 한 코디에 하나만. 그런 조합밖에 없을 때만 보여 줘요.
 //   → recentFits: 최근(5일 안) 입은 코디들 [옷 id Set] — 같은 코디는 되도록 다시 안 골라요.
-//   → nope: '마음에 안 들어요'를 누른 코디들 [[옷 id…]] — 겉에 보이는 옷이 똑같은 코디는 아예 안 골라요.
+//   → nope: '마음에 안 들어요'를 누른 코디들 [{ ids, full }] — 이너·신발·소품까지 똑같은 한 세트는 아예 안 골라요
+//     (신발만 바꿔서 마음에 안 든 세트를 피할 수 있으면 다음 신발로). full이 없는 예전 기록은 겉에 보이는 옷만 비교해요.
 //   → 여름용·겨울용으로만 정한 옷은 다른 계절엔 안 골라요(daySeasons).
 export function recommend({ items, t, want, date, recent = new Set(), recentFits = [], nope = [], skip = new Set(), slots = null }) {
   const bySlot = slots && slots.length >= 2;
+  const nopeFull = nope.filter((n) => n.full).map((n) => n.ids), nopeMain = nope.filter((n) => !n.full).map((n) => n.ids);
   const usable = items.filter((it) => !it.away && !skip.has(it.id));
   const season = daySeasons(date, t);
   const ok = usable.filter((it) => allowed(it, t) && seasonOk(it, season));
@@ -205,23 +207,28 @@ export function recommend({ items, t, want, date, recent = new Set(), recentFits
     for (const o of outerOpts) {
       let list = o ? [...core, o] : [...core];
       const shirtO = o && typeOf(o.type).cat === "top", hotPen = shirtO ? 1 : 3;   // 더운 날 겉옷 벌점 (셔츠는 가볍게)
-      let W = outfitWarmth(list);
-      // 신발: 남은 차이를 가장 잘 메우는 것
-      if (shoes.length) {
-        let best = null, bc = Infinity;
-        const hasPoint = pointCount(list, [inner]) > 0;
-        for (const s of shoes) { if (hasPoint && s.point && shoes.some((x) => !x.point)) continue;   // 포인트 옷이 있으면 포인트 신발은 빼요
-          const d = W + itemWarmth(s) - want; const cc = d * d + (recent.has(s.id) ? 0.2 : 0); if (cc < bc) { bc = cc; best = s; } }
-        list.push(best); W += itemWarmth(best);
-      }
-      // 소품: 아주 추운 날에만, 더해서 나아지면 하나씩 (같은 종류는 하나만)
-      if (want >= 14) {
-        const used = new Set();
-        for (const a of [...accs].sort((x, y) => itemWarmth(y) - itemWarmth(x))) {
-          if (used.has(a.type) || patternClash([...list, a], [inner]) || (a.point && pointCount(list, [inner]))) continue;   // 체크 코트에 체크 목도리도 피해요
-          if (Math.abs(W + itemWarmth(a) - want) < Math.abs(W - want)) { list.push(a); W += itemWarmth(a); used.add(a.type); }
+      const pre = list, W0 = outfitWarmth(list);
+      let W = W0, found = false;
+      // 신발: 남은 차이를 가장 잘 메우는 것부터 (마음에 안 든 세트가 되면 다음 신발)
+      const hasPoint = pointCount(list, [inner]) > 0;
+      const shoeOpts = shoes.length
+        ? shoes.filter((s) => !(hasPoint && s.point && shoes.some((x) => !x.point)))   // 포인트 옷이 있으면 포인트 신발은 빼요
+            .map((s) => { const d = W0 + itemWarmth(s) - want; return [s, d * d + (recent.has(s.id) ? 0.2 : 0)]; }).sort((a, b) => a[1] - b[1]).map((x) => x[0])
+        : [null];
+      for (const sh of shoeOpts) {
+        list = sh ? [...pre, sh] : [...pre]; W = W0 + (sh ? itemWarmth(sh) : 0);
+        // 소품: 아주 추운 날에만, 더해서 나아지면 하나씩 (같은 종류는 하나만)
+        if (want >= 14) {
+          const used = new Set();
+          for (const a of [...accs].sort((x, y) => itemWarmth(y) - itemWarmth(x))) {
+            if (used.has(a.type) || patternClash([...list, a], [inner]) || (a.point && pointCount(list, [inner]))) continue;   // 체크 코트에 체크 목도리도 피해요
+            if (Math.abs(W + itemWarmth(a) - want) < Math.abs(W - want)) { list.push(a); W += itemWarmth(a); used.add(a.type); }
+          }
         }
+        const all = list.map((x) => x.id);
+        if (!nopeFull.some((f) => sameSet(f, all))) { found = true; break; }
       }
+      if (!found) continue;   // 어떤 신발을 신어도 마음에 안 든다고 한 세트
       let cost;
       if (bySlot) {
         // 시간대마다 벌점: 겉옷이 있으면 벗는 것도 해 봐요(벗고 들고 다니는 수고 0.3)
@@ -237,7 +244,7 @@ export function recommend({ items, t, want, date, recent = new Set(), recentFits
       cost += 0.6 * innerCost;   // 옷 색과 덜 어울리는 이너는 조금 덜
       // 최근 5일 안에 입은 코디: 똑같으면 많이, 상의+하의(원피스)가 같으면 조금 덜
       const mine = mainIds(list, inner), baseIds = bse.map((x) => x.id);
-      if (nope.some((f) => sameSet(f, mine))) continue;   // 마음에 안 든다고 한 코디
+      if (nopeMain.some((f) => sameSet(f, mine))) continue;   // 마음에 안 든다고 한 코디 (예전 기록)
       if (fits.some((f) => sameSet(f, mine))) cost += 4;
       else if (fits.some((f) => baseIds.every((id) => f.includes(id)))) cost += 1.5;
       for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes" && it !== inner) cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
