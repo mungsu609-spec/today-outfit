@@ -1,4 +1,5 @@
 // 옷 종류 목록 — 앱과 AI 라벨 만들기 도구(도구/make-labels.html)가 같이 써요.
+import { R } from "./rules.js";   // 내 규칙 (나시는 이너로만·셔츠 겉옷 대신·무늬 피하기)
 // 종류를 추가하거나 영어 설명(en)을 바꾸면 도구로 labels.json을 다시 만들어야 해요.
 
 // 부위(cat): 옷 따뜻함을 더할 때 부위마다 무게가 달라요 (겉옷이 제일 많이 따뜻하게 해 줘요)
@@ -129,16 +130,15 @@ const isHeat = (it) => typeOf(it.type).cat === "top" && (typeOf(it.type).id === 
 // 다리에 신는 옷: 히트텍 하의(바지 안 이너, 치마 밑엔 스타킹 대신)·스타킹
 const LEGWEAR = ["heat_bottom", "stockings"];
 export const isLegwear = (it) => LEGWEAR.includes(typeOf(it.type).id);
-export const STOCKING_MAX = 20;   // 스타킹은 이 온도 이하인 날만 (히트텍 하의는 HEAT_MAX 이하)
 // 안에만 입는 옷: 나시·히트텍·스타킹 — 혼자(상의·하의 자리) 추천하지 않고, 무늬·포인트·최근 코디 비교에서도 빼요
-export const innerOnly = (it) => typeOf(it.type).id === "sleeveless" || isHeat(it) || isLegwear(it);
+export const innerOnly = (it) => (typeOf(it.type).id === "sleeveless" && R.tankInner) || isHeat(it) || isLegwear(it);   // 나시는 내 규칙에서 끌 수 있어요
 export const isHeatTop = (it) => isHeat(it);
 // 이 하의(원피스) 밑엔 스타킹을 신어요: 치마·원피스, 짧은·무릎 기장. 긴 바지면 히트텍 하의만 안에.
 export const stockingBase = (b) => typeOf(b.type).cat === "dress" || typeOf(b.type).id === "skirt" || lenOf(b) !== "long";
 export const canInner = (it) => !!it.virtual || ((["sleeveless", "tee_s"].includes(typeOf(it.type).id) || isHeat(it)) && !it.inner && (it.sheer || "none") === "none");
 
 // 이너 필요한 상의에서 '어떤 이너를 입을지' 고르기 (여러 개 가능, 저장 이름 innerPick)
-//  옷장에 같은 옷(흰색 나시 등)이 있으면 그 옷을 쓰고, 없으면 이 목록의 옷(virtual)을 써요. 히트텍은 HEAT_MAX° 이하인 날만.
+//  옷장에 같은 옷(흰색 나시 등)이 있으면 그 옷을 쓰고, 없으면 이 목록의 옷(virtual)을 써요. 히트텍은 내 규칙의 히트텍 온도(R.heatMax) 이하인 날만.
 export const INNER_PICKS = [
   { id: "tank_w", ko: "흰색 나시",   type: "sleeveless", color: "흰색", basic: "tank" },
   { id: "tank_b", ko: "검정 나시",   type: "sleeveless", color: "검정", basic: "tank" },
@@ -146,7 +146,6 @@ export const INNER_PICKS = [
   { id: "tee_b",  ko: "검정 티셔츠", type: "tee_s",      color: "검정", basic: "tee" },
   { id: "heat",   ko: "히트텍",      type: "heat_top",   color: "베이지", basic: "heattop", warm: 1.5 },
 ];
-export const HEAT_MAX = 15;
 // 목록의 옷 (늘 같은 물건이라 코디 안에서 비교할 수 있어요). 사진(photo)은 index.html이 그려 넣어요.
 export const VIRTUAL_INNERS = INNER_PICKS.map((p) => ({ id: "inner:" + p.id, virtual: true, pick: p.id, type: p.type, color: p.color, name: p.ko, warm: p.warm || 1, pattern: "plain", sheer: "none", inner: false }));
 export const hasInnerPick = (it) => typeOf(it.type).cat === "top" && !!it.inner && !!it.innerPick?.length;
@@ -166,7 +165,7 @@ export const pointCount = (list, skip = []) => list.filter((it) => it.point && !
 // 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신 입을 수 있어요.
 //  옷마다 '겉옷으로도 입기'(asOuter)로 정해요 — 비치는 셔츠도 사용자가 켜 두면 골라요. 예전에 넣은 셔츠는 켜진 걸로 봐요.
 //  민소매 셔츠·블라우스는 겉옷 대신으로 안 봐요 (그 안에 티셔츠를 입는 건 '받쳐 입기')
-export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && it.asOuter !== false && lenOf(it) !== "sleeveless";
+export const canShirtOuter = (it) => R.shirtOuter && typeOf(it.type).id === "shirt" && it.asOuter !== false && lenOf(it) !== "sleeveless";
 // 민소매 옷 안에 받쳐 입는 기본 티셔츠: 무지 반팔·긴팔 티셔츠
 export const isUnderTee = (it) => ["tee_s", "tee_l"].includes(typeOf(it.type).id) && (it.pattern || "plain") === "plain";
 export const SHIRT_BASE = ["tee_s", "tee_l", "sleeveless"];   // 셔츠를 위에 걸칠 수 있는 상의
@@ -176,6 +175,7 @@ export const SHIRT_BASE = ["tee_s", "tee_l", "sleeveless"];   // 셔츠를 위�
 //  결과: 겹치는 두 무늬 id [앞, 뒤] (없으면 null)
 export const BUSY = ["stripe", "check", "floral"];
 export function patternClash(list, skip = []) {
+  if (!R.patternAvoid) return null;   // 내 규칙에서 끄면 무늬 상관없이
   let first = null;
   for (const it of list) {
     if (skip.includes(it) || innerOnly(it) || typeOf(it.type).cat === "shoes" || !BUSY.includes(it.pattern)) continue;

@@ -214,6 +214,21 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .edit-photo { display: block; margin: 8px auto 0; }
 .photo-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
 .photo-btns .edit-photo { margin: 0; }
+/* 내 규칙 */
+.rule-g { margin: 18px 0 2px; font-size: 13px; color: var(--sub); font-weight: 600; }
+.rule { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.rule.dim { opacity: .45; }
+.rule .rt { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rule .rt small { color: var(--sub); font-size: 12px; }
+.rule .rt .was { color: var(--accent); }
+.tgl { flex: none; width: 48px; height: 28px; border-radius: 999px; border: 0; background: var(--line); position: relative; padding: 0; }
+.tgl::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: left .15s; }
+.tgl.on { background: var(--accent); }
+.tgl.on::after { left: 23px; }
+.step { flex: none; display: flex; align-items: center; gap: 4px; }
+.step button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: 18px; line-height: 1; padding: 0; }
+.step button:disabled { opacity: .35; }
+.step b { min-width: 64px; text-align: center; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -258,6 +273,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
       <p class="muted">이 시간대 날씨로 옷을 골라요. 아침·저녁 쌀쌀함도 챙겨요.</p>
       <div class="row"><select id="setStart"></select><span>~</span><select id="setEnd"></select></div>
     </div>
+    <div class="card" id="setRules"></div>
     <div class="card" id="setNope"></div>
     <div class="card" id="setStore"></div>
     <div class="card">
@@ -307,7 +323,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 })();
 </script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount, innerOnly, isLegwear } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, pointCount, innerOnly, isLegwear } from "./catalog.js";
+import { R, RULES, RULES_ID, DEFAULTS, setRules, changedRules, rulesKey } from "./rules.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints, bareArms } from "./model.js";
@@ -454,10 +471,10 @@ function recentSet(date) {
   return s;
 }
 
-// 최근 4일 안(= 5일 텀을 안 둔) 입은 코디들 — 같은 코디는 되도록 다시 추천하지 않아요
+// 최근 n일 안(내 규칙 recentDays, 기본 4일 = 5일 텀) 입은 코디들 — 같은 코디는 되도록 다시 추천하지 않아요
 function recentFits(date) {
   const t = new Date(date + "T00:00"), out = [];
-  for (const g of logs) { const age = (t - new Date(g.id + "T00:00")) / 864e5; if (age >= 1 && age <= 4 && g.items?.length) out.push(new Set(g.items)); }
+  for (const g of logs) { const age = (t - new Date(g.id + "T00:00")) / 864e5; if (age >= 1 && age <= R.recentDays && g.items?.length) out.push(new Set(g.items)); }
   return out;
 }
 
@@ -483,7 +500,7 @@ function renderHome() {
   // 고른 옷이 있으면 그것, 없으면 추천
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
-  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}|${nopeList().map((n) => (n.full ? "f" : "") + n.ids.join("+")).join()}`;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}|${nopeList().map((n) => (n.full ? "f" : "") + n.ids.join("+")).join()}|${rulesKey()}`;
   const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
   if (key !== recKey) { recKey = key; recIdx = keepIdx ?? 0; keepIdx = null; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), recentFits: recentFits(info.date), nope: nopeList().map((n) => ({ ids: n.ids, full: !!n.full })), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
@@ -520,14 +537,14 @@ function piecesHtml(list) {
     : it === L.outer && L.shirtOuter ? "겉옷 대신" : "";
   const notes = [];
   if (L.noInner) notes.push(L.noInner.innerPick?.length && typeOf(L.noInner.type).cat === "top"
-    ? `💡 '${esc(L.noInner.name)}' 안에 이너를 같이 입으면 좋아요. (골라 둔 이너가 ${L.noInner.innerPick.every((x) => x === "heat") ? `히트텍뿐이라 ${HEAT_MAX}°보다 따뜻한 날엔 안 골랐어요` : "이 코디엔 안 맞았어요"})`
+    ? `💡 '${esc(L.noInner.name)}' 안에 이너를 같이 입으면 좋아요. (골라 둔 이너가 ${L.noInner.innerPick.every((x) => x === "heat") ? `히트텍뿐이라 ${R.heatMax}°보다 따뜻한 날엔 안 골랐어요` : "이 코디엔 안 맞았어요"})`
     : `💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
   if (bareArms(list) && !(L.outer && lenOf(L.outer) !== "sleeveless")) notes.push("💡 민소매 옷이에요. 위에 겉옷·셔츠를 걸치거나 안에 티셔츠를 받쳐 입으면 좋아요.");
   for (const b of L.bottomInner) notes.push(`💡 '${esc(b.name)}' 안에 속바지·속치마를 챙기세요.`);
   const pc = patternClash(list, [L.inner]);
   const pk = (id) => PATTERNS.find((p) => p.id === id)?.ko;
   const pn = pointCount(list, [L.inner]);
-  if (pn >= 2) notes.push(`💡 포인트 옷이 ${pn}벌이에요. 하나만 두면 더 깔끔해요.`);
+  if (R.pointOne && pn >= 2) notes.push(`💡 포인트 옷이 ${pn}벌이에요. 하나만 두면 더 깔끔해요.`);
   if (pc) notes.push(`💡 ${pc[0] === pc[1] ? `${pk(pc[0])} 옷이 두 벌` : `${pk(pc[0])}와 ${pk(pc[1])}가 같이`} 있어요. 한쪽을 무지로 바꾸면 더 깔끔해요.`);
   return `<div class="pieces">${list.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div>${role(it) ? `<span class="role">${role(it)}</span>` : ""}</div>`).join("")}</div>
     ${notes.map((n) => `<p class="layer-note">${n}</p>`).join("")}`;
@@ -978,7 +995,7 @@ function openEditor(item, draft = null) {
       <div class="chips"><button class="chip${it.inner ? "" : " on"}" data-inner="0">필요 없음</button><button class="chip${it.inner ? " on" : ""}" data-inner="1">${bottom ? "속바지·속치마 필요" : "이너 필요"}</button></div>
       ${it.inner && typeOf(it.type).cat === "top" ? `<label class="f">어떤 이너를 입을까요? <small class="muted">(여러 개 골라도 돼요)</small></label>
       <div class="chips">${INNER_PICKS.map((x) => `<button class="chip${(it.innerPick || []).includes(x.id) ? " on" : ""}" data-ipick="${x.id}">${x.ko}</button>`).join("")}</div>
-      <p class="muted" style="margin:6px 0 0">${it.innerPick?.length ? `고른 것 중에서 날씨·옷 색에 맞는 걸 하나 같이 골라 줘요${it.innerPick.includes("heat") ? ` (히트텍은 ${HEAT_MAX}° 이하인 날만)` : ""}.` : "안 고르면 옷장의 나시·반팔 티셔츠 중에서 골라 줘요."}</p>`
+      <p class="muted" style="margin:6px 0 0">${it.innerPick?.length ? `고른 것 중에서 날씨·옷 색에 맞는 걸 하나 같이 골라 줘요${it.innerPick.includes("heat") ? ` (히트텍은 ${R.heatMax}° 이하인 날만)` : ""}.` : "안 고르면 옷장의 나시·반팔 티셔츠 중에서 골라 줘요."}</p>`
       : it.inner ? `<p class="muted" style="margin:6px 0 0">${bottom ? "추천할 때 속바지·속치마를 챙기라고 알려 줘요." : "추천할 때 옷장의 나시·반팔 티셔츠를 안에 같이 골라 줘요."}</p>` : ""}`;
     }
     // 셔츠·블라우스: 겉옷으로도 입을지 (예전에 넣은 셔츠는 켜져 있어요)
@@ -1226,9 +1243,52 @@ function renderSet() {
       ? `<h2>저장</h2><p class="muted">아직 코드를 정하지 않았어요.</p><button class="btn primary" data-s="welcome">시작하기</button>`
       : `<h2>저장 (이 폰에만)</h2><p class="muted">지금은 이 폰에만 저장돼요. Firebase를 연결하면 폰을 바꿔도 옷장과 기록이 남아요.</p>`;
   $("#appVer").textContent = VERSION;
+  renderRules();
   renderNope();
   aiState();
 }
+// 설정: '내 규칙' 한 줄 → 누르면 규칙 창 (켜기/끄기·온도 바꾸기, 바꾸면 바로 저장·추천에 반영)
+function renderRules() {
+  const n = Object.keys(changedRules()).length;
+  $("#setRules").innerHTML = `<button class="set-link" data-rules>
+    <span><b>📏 내 규칙</b><small class="muted">${n ? `${n}개 바꿈 · ` : ""}나시는 이너로만·히트텍·민소매·온도 등</small></span><span class="muted">›</span></button>`;
+}
+$("#setRules").addEventListener("click", (e) => { if (e.target.closest("[data-rules]")) openRules(); });
+// dep: "이름" = 그 규칙이 켜져 있을 때만, "!이름" = 꺼져 있을 때만 의미 있어요 → 아니면 흐리게
+const ruleLive = (r) => !r.dep || (r.dep[0] === "!" ? !R[r.dep.slice(1)] : R[r.dep]);
+const ruleVal = (r, v = R[r.id]) => r.num != null ? `${v}${r.unit}` : v ? "켜짐" : "꺼짐";
+function openRules() {
+  const row = (r) => `<div class="rule${ruleLive(r) ? "" : " dim"}"><div class="rt"><b>${r.ko}</b>${r.desc ? `<small>${r.desc}</small>` : ""}${R[r.id] !== DEFAULTS[r.id] ? `<small class="was">처음: ${ruleVal(r, DEFAULTS[r.id])}</small>` : ""}</div>
+    ${r.num != null
+      ? `<div class="step"><button data-r="${r.id}" data-d="-1" ${R[r.id] <= r.min ? "disabled" : ""} aria-label="내리기">−</button><b>${ruleVal(r)}</b><button data-r="${r.id}" data-d="1" ${R[r.id] >= r.max ? "disabled" : ""} aria-label="올리기">+</button></div>`
+      : `<button class="tgl${R[r.id] ? " on" : ""}" data-r="${r.id}" role="switch" aria-checked="${!!R[r.id]}" aria-label="${r.ko}"></button>`}</div>`;
+  const draw = () => {
+    const y = $("#sheet").scrollTop;
+    openSheet(`<div class="sheet-head"><h2>📏 내 규칙</h2><button class="btn ghost" data-x="close">닫기</button></div>
+    <p class="muted" style="margin:0">추천할 때 지키는 규칙이에요. 바꾸면 바로 추천에 반영되고, 폰을 바꿔도 남아요. 온도는 체감 온도예요.</p>
+    ${RULES.map((g) => `<div class="rule-g">${g.group}</div>${g.list.map(row).join("")}`).join("")}
+    <button class="btn block" style="margin-top:16px" data-x="reset" ${Object.keys(changedRules()).length ? "" : "disabled"}>처음대로 되돌리기</button>`, onClick);
+    $("#sheet").scrollTop = y;
+  };
+  const save = async () => {
+    recKey = ""; refresh(); draw();
+    try { await logStore.set(RULES_ID, { rules: changedRules(), at: Date.now() }); }
+    catch (err) { console.error(err); toast("규칙을 저장하지 못했어요"); }
+  };
+  const onClick = (e) => {
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "close") return closeSheet();
+    if (x === "reset") { if (confirm("규칙을 모두 처음대로 되돌릴까요?")) { setRules({}); save(); } return; }
+    const b = e.target.closest("[data-r]");
+    if (!b) return;
+    const r = RULES.flatMap((g) => g.list).find((q) => q.id === b.dataset.r);
+    if (r.num != null) R[r.id] = Math.min(r.max, Math.max(r.min, R[r.id] + (+b.dataset.d) * (r.step || 1)));
+    else R[r.id] = !R[r.id];
+    save();
+  };
+  draw();
+}
+
 // 설정: '마음에 안 드는 코디' 한 줄 → 누르면 목록 창(취소 가능)
 function renderNope() {
   const n = nopeList().length;
@@ -1366,7 +1426,7 @@ function refresh() {
   if (view === "home") renderHome();
   if (view === "closet") renderCloset();
   if (view === "log") renderLogs();
-  if (view === "set") renderNope();
+  if (view === "set") { renderRules(); renderNope(); }
 }
 async function start(force = false) {
   try { await loadWeather(force); } catch (e) { console.error(e); if (!wx) toast("날씨를 불러오지 못했어요"); }
@@ -1410,7 +1470,8 @@ async function boot() {
   } else { itemStore = localStore("items"); logStore = localStore("logs"); }
   if (online() && ls.get("wx.migrate")) await migrateLocal();
   itemStore.subscribe((list) => { items = list; refresh(); redrawOldBasics(list); });
-  logStore.subscribe((list) => { logs = list; refresh(); });
+  // 기록 모음 안의 'rules' 문서 = 내 규칙 (날짜 기록과 따로)
+  logStore.subscribe((list) => { setRules(list.find((g) => g.id === RULES_ID)?.rules); logs = list.filter((g) => g.id !== RULES_ID); refresh(); });
   start();
   if (CFG.FIREBASE && !ls.get("wx.code")) openWelcome();
 }
