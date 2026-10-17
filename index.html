@@ -34,6 +34,13 @@ button { cursor: pointer; }
 .wrap { max-width: 540px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 92px); }
 .view[hidden] { display: none; }
 h1 { font-size: 22px; margin: 4px 0 12px; letter-spacing: -.3px; }
+.closet-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; }
+.closet-head h1 { margin: 0; flex: 1; }
+.search-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); font-size: 18px; }
+.search-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.search-row { position: relative; margin: -4px 0 10px; }
+.search-row input { padding-right: 40px; }
+.search-row button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: var(--sub); font-size: 16px; padding: 8px; }
 h2 { font-size: 17px; margin: 0; letter-spacing: -.2px; }
 .card { background: var(--card); border-radius: 18px; padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
 .muted { color: var(--sub); font-size: 14px; }
@@ -51,6 +58,7 @@ h2 { font-size: 17px; margin: 0; letter-spacing: -.2px; }
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .chips.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px 2px; }
 .chips.scroll::-webkit-scrollbar { display: none; }
+.chips[hidden] { display: none; }
 .chips.scroll .chip { flex: none; }
 input[type=text], input[type=search], input[type=date], select, textarea { width: 100%; border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 10px 12px; font-size: 16px; }
 label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px; font-weight: 600; }
@@ -247,7 +255,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
   <!-- 옷장 -->
   <section class="view" id="closetView" hidden>
-    <h1>내 옷장 <span class="muted" id="closetCount"></span></h1>
+    <div class="closet-head"><h1>내 옷장 <span class="muted" id="closetCount"></span></h1><button class="search-btn" id="btnSearch" aria-label="옷 찾기">🔍</button></div>
+    <div class="search-row" id="searchRow" hidden><input type="search" id="closetQ" placeholder="이름·색·종류로 찾기 (예: 검정 니트)" autocomplete="off"><button id="qClear" aria-label="지우기" hidden>✕</button></div>
     <div class="chips scroll" id="seasonChips"></div>
     <div class="chips scroll" id="catChips"></div>
     <div class="grid" id="closetGrid"></div>
@@ -661,6 +670,11 @@ function openChooser(info) {
 
 // ---------- 옷장 ----------
 let catFilter = ls.get("wx.cat", "all"), seasonFilter = ls.get("wx.season", "all");
+// 🔍 찾기: 이름·메모·색·종류·무늬·길이·계절에서 찾아요. 띄어 쓴 낱말은 모두 들어 있는 옷만 (예: "검정 니트").
+//  찾는 중엔 계절·종류 고르기와 상관없이 옷장 전체에서 찾아요.
+let closetQ = "";
+const searchText = (it) => [it.name, it.memo, it.color, typeOf(it.type).ko, CATS[typeOf(it.type).cat]?.ko, PATTERNS.find((p) => p.id === (it.pattern || "plain"))?.ko, lenWord(it),
+  ...SEASONS.filter((x) => seasonsOf(it).includes(x.id)).map((x) => x.ko), it.point ? "포인트" : "", it.away ? "빼 둠" : ""].filter(Boolean).join(" ").toLowerCase();
 function renderCloset() {
   // 계절 고르기 (전체 / 봄·가을 / 여름 / 겨울) → 그 안에서 종류별
   const sCount = (k) => items.filter((it) => seasonsOf(it).includes(k)).length;
@@ -672,16 +686,27 @@ function renderCloset() {
   $("#closetCount").textContent = items.length ? `${items.length}벌` : "";
   $("#catChips").innerHTML = [["all", "전체"], ...Object.entries(CATS).map(([k, v]) => [k, v.ko])]
     .map(([k, ko]) => `<button class="chip${catFilter === k ? " on" : ""}" data-cat="${k}">${ko}${k !== "all" && counts[k] ? ` ${counts[k]}` : ""}</button>`).join("");
-  const list = inSeason.filter((it) => catFilter === "all" || typeOf(it.type).cat === catFilter)
+  const words = closetQ.toLowerCase().split(/\s+/).filter(Boolean);
+  $("#seasonChips").hidden = $("#catChips").hidden = !!words.length;
+  const list = (words.length ? items.filter((it) => { const t = searchText(it); return words.every((w) => t.includes(w)); }) : inSeason.filter((it) => catFilter === "all" || typeOf(it.type).cat === catFilter))
     .sort((a, b) => Object.keys(CATS).indexOf(typeOf(a.type).cat) - Object.keys(CATS).indexOf(typeOf(b.type).cat) || (a.warm || 0) - (b.warm || 0) || (b.createdAt || 0) - (a.createdAt || 0));
   $("#closetGrid").innerHTML = list.length ? list.map((it) => `<button class="item${it.away ? " away" : ""}" data-id="${it.id}">
       ${it.away ? `<span class="badge">빼 둠</span>` : ""}<div class="ph">${phHtml(it)}</div>
       <div class="nm">${esc(it.name)}</div><div class="wm">${"●".repeat(it.warm || 1)}${"○".repeat(5 - (it.warm || 1))} ${SEASONS.filter((x) => seasonsOf(it).includes(x.id)).map((x) => x.emoji).join("")}</div></button>`).join("")
-    : `<div class="empty" style="grid-column:1/-1"><b>👕</b>${items.length ? (seasonFilter !== "all" && !inSeason.length ? "이 계절 옷이 없어요" : "이 종류의 옷이 없어요") : "아직 옷이 없어요.<br>오른쪽 아래 <b style='display:inline;font-size:inherit'>＋ 옷 추가</b>로 사진을 찍어 넣어 보세요."}</div>`;
+    : `<div class="empty" style="grid-column:1/-1"><b>👕</b>${words.length ? `'${esc(closetQ.trim())}'에 맞는 옷이 없어요` : items.length ? (seasonFilter !== "all" && !inSeason.length ? "이 계절 옷이 없어요" : "이 종류의 옷이 없어요") : "아직 옷이 없어요.<br>오른쪽 아래 <b style='display:inline;font-size:inherit'>＋ 옷 추가</b>로 사진을 찍어 넣어 보세요."}</div>`;
 }
 $("#seasonChips").addEventListener("click", (e) => { const b = e.target.closest("[data-season]"); if (!b) return; seasonFilter = b.dataset.season; ls.set("wx.season", seasonFilter); renderCloset(); });
 $("#catChips").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; catFilter = b.dataset.cat; ls.set("wx.cat", catFilter); renderCloset(); });
 $("#closetGrid").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) openEditor(byId[b.dataset.id]); });
+// 🔍 누르면 찾기 칸이 열리고, 다시 누르면 닫히면서 찾던 말도 지워져요
+const setQ = (q) => { closetQ = q; $("#closetQ").value = q; $("#qClear").hidden = !q; renderCloset(); };
+$("#btnSearch").addEventListener("click", () => {
+  const open = $("#searchRow").hidden;
+  $("#searchRow").hidden = !open; $("#btnSearch").classList.toggle("on", open);
+  if (open) $("#closetQ").focus(); else setQ("");
+});
+$("#closetQ").addEventListener("input", () => setQ($("#closetQ").value));
+$("#qClear").addEventListener("click", () => { setQ(""); $("#closetQ").focus(); });
 // 기본 옷: 종류(나시·반팔·긴팔 티셔츠·히트텍 상하의·스타킹)를 누르고 색을 고르면 바로 옷장에 들어가요. 그림은 basics.js가 고른 색으로 그려요.
 const basicKey = (it) => OLD_BASIC[it.basic] || it.basic;   // 예전 'tank-black' → 'tank:검정'
 const BASIC_COLORS = Object.keys(COLORS).filter((k) => k !== "여러색");
