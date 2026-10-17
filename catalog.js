@@ -118,8 +118,36 @@ export function colorLum(name) {
 export const typeOf = (id) => TYPES.find((t) => t.id === id) || TYPES[0];
 
 // ---------- 이너·겉옷 대용 ----------
-// 이너로 입을 수 있는 옷: 안 비치는 나시·반팔 티셔츠
-export const canInner = (it) => ["sleeveless", "tee_s"].includes(typeOf(it.type).id) && !it.inner && (it.sheer || "none") === "none";
+// 이너로 입을 수 있는 옷: 안 비치는 나시·반팔 티셔츠 (+ 이름에 '히트텍'이 들어간 옷, 아래 이너 고르기용 옷)
+const isHeat = (it) => /히트텍/.test(it.name || "");
+export const canInner = (it) => !!it.virtual || ((["sleeveless", "tee_s"].includes(typeOf(it.type).id) || isHeat(it)) && !it.inner && (it.sheer || "none") === "none");
+
+// 이너 필요한 상의에서 '어떤 이너를 입을지' 고르기 (여러 개 가능, 저장 이름 innerPick)
+//  옷장에 같은 옷(흰색 나시 등)이 있으면 그 옷을 쓰고, 없으면 이 목록의 옷(virtual)을 써요. 히트텍은 HEAT_MAX° 이하인 날만.
+export const INNER_PICKS = [
+  { id: "tank_w", ko: "흰색 나시",   type: "sleeveless", color: "흰색", basic: "tank" },
+  { id: "tank_b", ko: "검정 나시",   type: "sleeveless", color: "검정", basic: "tank" },
+  { id: "tee_w",  ko: "흰색 티셔츠", type: "tee_s",      color: "흰색", basic: "tee" },
+  { id: "tee_b",  ko: "검정 티셔츠", type: "tee_s",      color: "검정", basic: "tee" },
+  { id: "heat",   ko: "히트텍",      type: "tee_l",      color: "베이지", basic: "long", warm: 1.5 },
+];
+export const HEAT_MAX = 15;
+// 목록의 옷 (늘 같은 물건이라 코디 안에서 비교할 수 있어요). 사진(photo)은 index.html이 그려 넣어요.
+export const VIRTUAL_INNERS = INNER_PICKS.map((p) => ({ id: "inner:" + p.id, virtual: true, pick: p.id, type: p.type, color: p.color, name: p.ko, warm: p.warm || 1, pattern: "plain", sheer: "none", inner: false }));
+export const hasInnerPick = (it) => typeOf(it.type).cat === "top" && !!it.inner && !!it.innerPick?.length;
+// 옷장에서 이 이너와 같은 옷 찾기 (빼 둔 옷은 안 써요)
+function closetInner(p, items) {
+  return items.find((x) => !x.away && canInner(x) && (p.id === "heat" ? isHeat(x) : typeOf(x.type).id === p.type && x.color === p.color && !isHeat(x))) || null;
+}
+// 이너 후보: 고른 게 있으면 그것들, 없으면 옷장의 나시·반팔 티셔츠 (예전처럼)
+export function innerChoices(main, items) {
+  if (hasInnerPick(main)) return main.innerPick.map((id) => { const p = INNER_PICKS.find((x) => x.id === id); return p && (closetInner(p, items) || VIRTUAL_INNERS.find((v) => v.pick === id)); }).filter(Boolean);
+  return items.filter((x) => !x.away && typeOf(x.type).cat === "top" && !x.virtual && canInner(x) && !isHeat(x));
+}
+export const isHeatInner = (x) => x.pick === "heat" || isHeat(x);
+
+// 포인트 옷: 눈에 띄는 옷은 한 코디에 하나만 (안에 입는 이너는 안 세요)
+export const pointCount = (list, skip = []) => list.filter((it) => it.point && !skip.includes(it)).length;
 // 셔츠는 티셔츠·나시 위에 걸쳐서 겉옷 대신 입을 수 있어요.
 //  옷마다 '겉옷으로도 입기'(asOuter)로 정해요 — 비치는 셔츠도 사용자가 켜 두면 골라요. 예전에 넣은 셔츠는 켜진 걸로 봐요.
 export const canShirtOuter = (it) => typeOf(it.type).id === "shirt" && it.asOuter !== false;
@@ -155,7 +183,7 @@ export function layers(list) {
   // 겉옷 대신 걸친 셔츠는 비쳐도 이너를 따로 찾지 않아요 (밑에 입은 옷이 있으니까)
   const needer = list.find((it) => it.inner && it !== (shirtOuter ? outer : null) && (cat(it) === "top" || cat(it) === "dress"));
   let inner = null;
-  if (needer) inner = tops.filter((x) => x !== needer && x !== (shirtOuter ? outer : null) && canInner(x)).sort((a, b) => (typeOf(a.type).id === "sleeveless" ? 0 : 1) - (typeOf(b.type).id === "sleeveless" ? 0 : 1))[0] || null;
+  if (needer) inner = tops.filter((x) => x !== needer && x !== (shirtOuter ? outer : null) && canInner(x)).sort((a, b) => (a.virtual ? 0 : 1) - (b.virtual ? 0 : 1) || (typeOf(a.type).id === "sleeveless" ? 0 : 1) - (typeOf(b.type).id === "sleeveless" ? 0 : 1))[0] || null;
   return { outer, shirtOuter, inner, noInner: needer && !inner ? needer : null, bottomInner: list.filter((it) => it.inner && cat(it) === "bottom") };
 }
 

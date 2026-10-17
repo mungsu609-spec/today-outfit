@@ -1,5 +1,5 @@
 // 추천 계산: 날씨 → 필요한 따뜻함 → 내 옷장에서 고르기, 그리고 기록으로 나에게 맞추기
-import { CATS, TYPES, typeOf, lenOf, lenKind, hemOf, lenWarmAdj, sheerAdj, canInner, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash } from "./catalog.js";
+import { CATS, TYPES, typeOf, lenOf, lenKind, hemOf, lenWarmAdj, sheerAdj, canShirtOuter, SHIRT_BASE, layers, colorLum, patternClash, innerChoices, isHeatInner, HEAT_MAX, pointCount } from "./catalog.js";
 
 // ---------- 따뜻함 점수 ----------
 // 옷 하나의 따뜻함 = 두께(1~5) × 부위 무게. 겉옷이 제일 커요.
@@ -146,22 +146,31 @@ const miss = (d) => d * d + (d < 0 ? 0.4 * d * d : 0);
 //   → 셔츠는 티셔츠·나시·원피스 위에 걸쳐서 겉옷 대신으로도 골라요.
 //   → 무늬가 같은 옷끼리(체크 원피스 + 체크 겉옷 등)는 안 골라요. 그런 조합밖에 없을 때만 보여 줘요.
 //   → '이너 필요'인 상의·원피스엔 옷장의 나시·반팔 티셔츠를 안에 같이 골라요(밝은 옷엔 밝은 이너, 어두운 옷엔 어두운 이너).
-export function recommend({ items, t, want, date, recent = new Set(), skip = new Set(), slots = null }) {
+//     상의에 '어떤 이너'를 골라 뒀으면 그중에서 (히트텍은 쌀쌀한 날만).
+//   → 포인트 옷은 한 코디에 하나만. 그런 조합밖에 없을 때만 보여 줘요.
+//   → recentFits: 최근(5일 안) 입은 코디들 [옷 id Set] — 같은 코디는 되도록 다시 안 골라요.
+export function recommend({ items, t, want, date, recent = new Set(), recentFits = [], skip = new Set(), slots = null }) {
   const bySlot = slots && slots.length >= 2;
   const usable = items.filter((it) => !it.away && !skip.has(it.id));
   const ok = usable.filter((it) => allowed(it, t));
   const by = (cat) => ok.filter((it) => typeOf(it.type).cat === cat);
   const tops = by("top"), bottoms = by("bottom"), dresses = by("dress"), outers = by("outer"), shoes = by("shoes"), accs = by("acc");
   const shirtOuters = t <= 28 ? tops.filter(canShirtOuter) : [];
-  // 이너는 겉에 안 보이니까 나시도 날씨와 상관없이 써요
-  const inners = usable.filter((it) => typeOf(it.type).cat === "top" && canInner(it));
-  const pickInner = (main) => {
+  // 이너는 겉에 안 보이니까 나시도 날씨와 상관없이 써요 (히트텍만 쌀쌀한 날)
+  //  후보마다 '어울림 벌점'(밝기 차이 등)을 붙여서, 따뜻함까지 같이 따져 고르게 해요.
+  const innerOpts = (main) => {
     // 민소매 옷 안엔 나시만, 밝기가 비슷한 걸로 (밝은 옷엔 누드·베이지를 조금 더 좋아해요)
     const l = colorLum(main.color), sl = lenOf(main) === "sleeveless";
-    const c = inners.filter((x) => x.id !== main.id && (!sl || typeOf(x.type).id === "sleeveless"));
-    const score = (x) => Math.abs(colorLum(x.color) - l) + (typeOf(x.type).id === "sleeveless" ? 0 : 0.15) - (l > 0.6 && x.color === "베이지" ? 0.2 : 0);
-    return c.sort((a, b) => score(a) - score(b))[0] || null;
+    const all = innerChoices(main, usable).filter((x) => x.id !== main.id && !skip.has(x.id) && (!isHeatInner(x) || t <= HEAT_MAX));
+    const c = sl && all.some((x) => typeOf(x.type).id === "sleeveless") ? all.filter((x) => typeOf(x.type).id === "sleeveless") : all;
+    const score = (x) => Math.abs(colorLum(x.color) - l) + (typeOf(x.type).id === "sleeveless" || isHeatInner(x) ? 0 : 0.15) - (l > 0.6 && x.color === "베이지" ? 0.2 : 0);
+    return c.map((x) => [x, score(x)]).sort((a, b) => a[1] - b[1]).slice(0, 3);
   };
+  // 최근 입은 코디와 같은지: 겉에 보이는 옷(상의·하의·원피스·겉옷)만 비교해요
+  const MAIN = ["top", "bottom", "dress", "outer"];
+  const mainIds = (list, inner) => list.filter((x) => x !== inner && MAIN.includes(typeOf(x.type).cat)).map((x) => x.id);
+  const byItem = Object.fromEntries(items.map((x) => [x.id, x]));
+  const fits = recentFits.map((s) => { const l = [...s].map((id) => byItem[id]).filter(Boolean); return mainIds(l, layers(l).inner); });
   const bases = [];
   for (const a of tops) for (const b of bottoms) bases.push([a, b]);
   for (const d of dresses) bases.push([d]);
@@ -169,7 +178,8 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
   const res = [], clashed = [];
   for (const bse of bases) {
     const main = bse[0], needer = main.inner ? main : null;
-    const inner = needer ? pickInner(needer) : null;
+    const ins = needer ? innerOpts(needer) : [];
+    for (const [inner, innerCost] of ins.length ? ins : [[null, 0]]) {
     const core = inner ? [main, inner, ...bse.slice(1)] : [...bse];
     // 셔츠를 걸칠 수 있는 건 티셔츠·나시(같은 옷 말고)나 원피스 위
     const canShirt = typeOf(main.type).cat === "dress" || SHIRT_BASE.includes(typeOf(main.type).id);
@@ -181,14 +191,16 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
       // 신발: 남은 차이를 가장 잘 메우는 것
       if (shoes.length) {
         let best = null, bc = Infinity;
-        for (const s of shoes) { const d = W + itemWarmth(s) - want; const cc = d * d + (recent.has(s.id) ? 0.2 : 0); if (cc < bc) { bc = cc; best = s; } }
+        const hasPoint = pointCount(list, [inner]) > 0;
+        for (const s of shoes) { if (hasPoint && s.point && shoes.some((x) => !x.point)) continue;   // 포인트 옷이 있으면 포인트 신발은 빼요
+          const d = W + itemWarmth(s) - want; const cc = d * d + (recent.has(s.id) ? 0.2 : 0); if (cc < bc) { bc = cc; best = s; } }
         list.push(best); W += itemWarmth(best);
       }
       // 소품: 아주 추운 날에만, 더해서 나아지면 하나씩 (같은 종류는 하나만)
       if (want >= 14) {
         const used = new Set();
         for (const a of [...accs].sort((x, y) => itemWarmth(y) - itemWarmth(x))) {
-          if (used.has(a.type) || patternClash([...list, a], [inner])) continue;   // 체크 코트에 체크 목도리도 피해요
+          if (used.has(a.type) || patternClash([...list, a], [inner]) || (a.point && pointCount(list, [inner]))) continue;   // 체크 코트에 체크 목도리도 피해요
           if (Math.abs(W + itemWarmth(a) - want) < Math.abs(W - want)) { list.push(a); W += itemWarmth(a); used.add(a.type); }
         }
       }
@@ -204,12 +216,18 @@ export function recommend({ items, t, want, date, recent = new Set(), skip = new
         if (o && t >= 23) cost += hotPen;
       }
       if (needer && !inner) cost += 0.5;   // 이너가 필요한데 옷장에 맞는 이너가 없으면 조금 덜
+      cost += 0.6 * innerCost;   // 옷 색과 덜 어울리는 이너는 조금 덜
+      // 최근 5일 안에 입은 코디: 똑같으면 많이, 상의+하의(원피스)가 같으면 조금 덜
+      const mine = mainIds(list, inner), baseIds = bse.map((x) => x.id);
+      if (fits.some((f) => f.length === mine.length && mine.every((id) => f.includes(id)))) cost += 4;
+      else if (fits.some((f) => baseIds.every((id) => f.includes(id)))) cost += 1.5;
       for (const it of list) if (recent.has(it.id) && typeOf(it.type).cat !== "shoes" && it !== inner) cost += 1.2;   // 최근 2일 안에 입은 옷은 조금 덜
       cost += hash(date + list.map((x) => x.id).join()) * 0.8;   // 같은 날엔 같은 순서, 날마다 조금씩 다르게
-      (patternClash(list, [inner]) ? clashed : res).push({ items: list, W, cost, key: bse.map((x) => x.id).join() });
+      (patternClash(list, [inner]) || pointCount(list, [inner]) >= 2 ? clashed : res).push({ items: list, W, cost, key: bse.map((x) => x.id).join() });
+    }
     }
   }
-  if (!res.length) res.push(...clashed);   // 옷장에 무늬 옷뿐이면 어쩔 수 없이
+  if (!res.length) res.push(...clashed);   // 옷장에 무늬 옷·포인트 옷뿐이면 어쩔 수 없이
   res.sort((a, b) => a.cost - b.cost);
   // 비슷한 코디(겉옷만 같은 걸 줄줄이) 너무 많지 않게: 상의+하의 조합이 같으면 2개까지만
   const seen = {}, out = [];

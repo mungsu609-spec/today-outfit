@@ -152,6 +152,10 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .step { padding: 6px 0; color: var(--sub); }
 .step.on { color: var(--ink); font-weight: 600; }
 .step.done { color: var(--good); }
+.clear-wrap { position: relative; }
+.clear-wrap input { padding-right: 40px; }
+.clear-x { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--sub); color: var(--card); font-size: 14px; line-height: 28px; padding: 0; cursor: pointer; }
+.clear-x[hidden] { display: none; }
 .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 15px; }
 .check input { width: 20px; height: 20px; }
 .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; margin-top: 8px; }
@@ -190,6 +194,8 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .adj-tools .btn { padding: 10px 4px; font-size: 14px; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 .edit-photo { display: block; margin: 8px auto 0; }
+.photo-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+.photo-btns .edit-photo { margin: 0; }
 </style>
 </head>
 <body>
@@ -282,7 +288,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 })();
 </script>
 <script type="module">
-import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons } from "./catalog.js";
+import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount } from "./catalog.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
@@ -425,6 +431,13 @@ function recentSet(date) {
   return s;
 }
 
+// 최근 4일 안(= 5일 텀을 안 둔) 입은 코디들 — 같은 코디는 되도록 다시 추천하지 않아요
+function recentFits(date) {
+  const t = new Date(date + "T00:00"), out = [];
+  for (const g of logs) { const age = (t - new Date(g.id + "T00:00")) / 864e5; if (age >= 1 && age <= 4 && g.items?.length) out.push(new Set(g.items)); }
+  return out;
+}
+
 function renderHome() {
   const info = dayInfo(day);
   if (!info) { $("#wxCard").innerHTML = `<div class="skel">날씨를 불러오지 못했어요 <button class="btn" id="retryWx">다시</button></div>`; $("#retryWx")?.addEventListener("click", () => start(true)); $("#outfitCard").innerHTML = ""; $("#feelCard").hidden = true; return; }
@@ -447,9 +460,9 @@ function renderHome() {
   // 고른 옷이 있으면 그것, 없으면 추천
   const log = logOf(info.date);
   const picked = log?.items?.length ? log.items.map((id) => byId[id]).filter(Boolean) : null;
-  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}`;
+  const key = `${info.date}|${r1(want * 10)}|${items.length}|${items.map((x) => x.id + x.type + (x.warm || "") + (x.len || "") + (x.hem || "") + (x.asOuter === false ? "o" : "") + (x.sheer || "") + (x.inner ? "i" : "") + (x.innerPick || []).join("") + (x.point ? "p" : "") + (x.color || "") + (x.away ? 1 : 0)).join()}|${recentFits(info.date).map((f) => [...f].join("+")).join()}`;
   const sl = slotFeels(info.hours), slots = sl.map((x) => ({ T: x.T, want: target(x.T, model) }));
-  if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), slots }); }
+  if (key !== recKey) { recKey = key; recIdx = 0; recs = recommend({ items, t: info.T, want, date: info.date, recent: recentSet(info.date), recentFits: recentFits(info.date), slots }); }
   const rec = picked ? { items: picked, W: outfitWarmth(picked) } : recs[recIdx % Math.max(1, recs.length)];
   const who = day === 0 ? "오늘" : "내일";
   let body;
@@ -479,10 +492,14 @@ function piecesHtml(list) {
   const L = layers(list);
   const role = (it) => it === L.inner ? "이너" : it === L.outer && L.shirtOuter ? "겉옷 대신" : "";
   const notes = [];
-  if (L.noInner) notes.push(`💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
+  if (L.noInner) notes.push(L.noInner.innerPick?.length && typeOf(L.noInner.type).cat === "top"
+    ? `💡 '${esc(L.noInner.name)}' 안에 이너를 같이 입으면 좋아요. (골라 둔 이너가 ${L.noInner.innerPick.every((x) => x === "heat") ? `히트텍뿐이라 ${HEAT_MAX}°보다 따뜻한 날엔 안 골랐어요` : "이 코디엔 안 맞았어요"})`
+    : `💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
   for (const b of L.bottomInner) notes.push(`💡 '${esc(b.name)}' 안에 속바지·속치마를 챙기세요.`);
   const pc = patternClash(list, [L.inner]);
   const pk = (id) => PATTERNS.find((p) => p.id === id)?.ko;
+  const pn = pointCount(list, [L.inner]);
+  if (pn >= 2) notes.push(`💡 포인트 옷이 ${pn}벌이에요. 하나만 두면 더 깔끔해요.`);
   if (pc) notes.push(`💡 ${pc[0] === pc[1] ? `${pk(pc[0])} 옷이 두 벌` : `${pk(pc[0])}와 ${pk(pc[1])}가 같이`} 있어요. 한쪽을 무지로 바꾸면 더 깔끔해요.`);
   return `<div class="pieces">${list.map((it) => `<div class="piece"><div class="ph">${phHtml(it)}</div><div class="nm">${esc(it.name)}</div>${role(it) ? `<span class="role">${role(it)}</span>` : ""}</div>`).join("")}</div>
     ${notes.map((n) => `<p class="layer-note">${n}</p>`).join("")}`;
@@ -635,7 +652,7 @@ function openAdd() {
     if (k) return openBasic(BASIC_KINDS.find((x) => x.id === k));
     const x = e.target.closest("[data-x]")?.dataset.x;
     if (x === "close") closeSheet();
-    if (x === "photo") { $("#fileIn").value = ""; $("#fileIn").click(); }
+    if (x === "photo") { photoJob = null; $("#fileIn").value = ""; $("#fileIn").click(); }
     if (x === "nophoto") openEditor(null);
   });
 }
@@ -663,10 +680,13 @@ function openBasic(k, color = null) {
 }
 $("#btnAdd").addEventListener("click", openAdd);
 
+// 사진 바꾸기(옷 고치기에서)일 때: { done(사진, 맞추기 상태), cancel } — 배경만 지우고 종류 등은 그대로 둬요
+let photoJob = null;
 $("#fileIn").addEventListener("change", async () => {
   const file = $("#fileIn").files[0];
   if (!file) return;
-  const steps = ["사진 읽기", "배경 지우기", "옷 종류·두께 알아보기"];
+  const job = photoJob; photoJob = null;
+  const steps = job ? ["사진 읽기", "배경 지우기"] : ["사진 읽기", "배경 지우기", "옷 종류·두께 알아보기"];
   let cur = 0;
   const show = (pct, note = "") => {
     $("#sheet").innerHTML = `<div class="grab"></div><h2>AI가 옷을 살펴보는 중</h2>
@@ -683,13 +703,15 @@ $("#fileIn").addEventListener("change", async () => {
     bg = await A.removeBg(orig, (p, t) => show(0.15 + p * 0.35, t));
     cut = cutout(bg);
     color = mainColor(cut);
-    cur = 2; show(0.55, "");
-    ai = await A.classify(cut, (p, t) => show(0.55 + p * 0.4, t), { onWhite, rotate });
+    if (!job) {
+      cur = 2; show(0.55, "");
+      ai = await A.classify(cut, (p, t) => show(0.55 + p * 0.4, t), { onWhite, rotate });
+    }
   } catch (err) {
     console.error(err);
     toast("AI가 잘 안 됐어요. 직접 골라 주세요");
   }
-  if (!orig) { closeSheet(); return toast("사진을 읽지 못했어요"); }
+  if (!orig) { if (job) job.cancel(); else closeSheet(); return toast("사진을 읽지 못했어요"); }
   const t = ai?.types?.[0];
   let warm = typeOf(t?.id || "tee_s").warm;
   if (ai) warm = Math.min(5, Math.max(1, warm + (ai.thick > 0.75 ? 1 : ai.thick < 0.25 ? -1 : 0)));
@@ -697,6 +719,7 @@ $("#fileIn").addEventListener("change", async () => {
   const W = (bg || orig).width, H = (bg || orig).height;
   const init = bg ? fitState(W, H, bbox(bg, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
   const adj = { cut: bg, orig, W, H, init, st: { ...init, raw: !bg } };
+  if (job) return openAdjust(adj, (photo) => job.done(photo, adj), job.cancel);
   const draft = { type: t?.id, len: aiLen(t?.id || "tee_s", ai), warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai, adj };
   openAdjust(adj, (photo) => openEditor(null, { ...draft, photo }));
 });
@@ -789,7 +812,7 @@ function openEditor(item, draft = null) {
     const sug = ai ? ai.types.slice(0, 3).filter((x) => x.p >= 0.05) : [];
     openSheet(`<div class="sheet-head"><h2>${isNew ? "새 옷" : "옷 고치기"}</h2><button class="btn ghost" data-x="close">닫기</button></div>
       <div class="preview">${it.photo ? `<img src="${it.photo}" alt="">` : CAT_EMOJI[typeOf(it.type).cat]}</div>
-      ${it.photo ? `<button class="btn edit-photo" data-x="adjust">📐 각도·크기 맞추기</button>` : ""}
+      <div class="photo-btns">${it.photo ? `<button class="btn edit-photo" data-x="adjust">📐 각도·크기 맞추기</button><button class="btn edit-photo" data-x="newphoto">🖼️ 사진 바꾸기</button>` : `<button class="btn edit-photo" data-x="newphoto">📷 사진 넣기</button>`}</div>
       <label class="f">종류${ai ? `<span class="ai-tag">AI 추천</span>` : ""}</label>
       ${sug.length ? `<div class="ai-sugg">${sug.map((s) => `<button class="chip${it.type === s.id ? " on" : ""}" data-type="${s.id}">${typeOf(s.id).ko}<small>${Math.round(s.p * 100)}%</small></button>`).join("")}</div><div style="height:8px"></div>` : ""}
       <select id="eType">${typeOpts}</select>
@@ -802,14 +825,18 @@ function openEditor(item, draft = null) {
       <div class="chips" id="eColor">${Object.entries(COLORS).map(([k, v]) => `<button class="chip${it.color === k ? " on" : ""}" data-color="${k}"><span class="color-dot" style="background:${v}"></span>${k}</button>`).join("")}</div>
       <label class="f">무늬${ai ? `<span class="ai-tag">AI 짐작</span>` : ""}</label>
       <div class="chips" id="ePat">${PATTERNS.map((p) => `<button class="chip${it.pattern === p.id ? " on" : ""}" data-pat="${p.id}">${p.ko}</button>`).join("")}</div>
-      <label class="f">이름</label><input type="text" id="eName" value="${esc(it.name)}" maxlength="30">
+      <label class="f">이름</label><div class="clear-wrap"><input type="text" id="eName" value="${esc(it.name)}" maxlength="30"><button type="button" class="clear-x" id="eNameX" aria-label="이름 지우기" ${it.name ? "" : "hidden"}>✕</button></div>
       <label class="f">메모 (선택)</label><input type="text" id="eMemo" value="${esc(it.memo || "")}" maxlength="80" placeholder="예: 안에 기모 있음">
+      <label class="check"><input type="checkbox" id="ePoint" ${it.point ? "checked" : ""}>⭐ 포인트 옷 (한 코디에 하나만 골라요)</label>
       <label class="check"><input type="checkbox" id="eAway" ${it.away ? "checked" : ""}>지금은 추천에서 빼 두기 (빨래·수선 중)</label>
       ${ai ? `<p class="muted">AI 짐작은 틀릴 수 있어요. 맞지 않으면 눌러서 고쳐 주세요.</p>` : ""}
       <div class="row" style="margin-top:16px">${isNew ? "" : `<button class="btn danger" data-x="del">지우기</button>`}<button class="btn primary spacer" data-x="save">저장</button></div>`, onClick);
     $("#eType").value = it.type;
     $("#eType").onchange = () => setType($("#eType").value);
-    $("#eName").oninput = () => { it.name = $("#eName").value; nameTouched = true; };
+    $("#eName").oninput = () => { it.name = $("#eName").value; nameTouched = true; $("#eNameX").hidden = !it.name; };
+    // ✕: 자동으로 들어간 이름을 한 번에 지우고 바로 새로 쓰기 (비워 두고 저장하면 자동 이름)
+    $("#eNameX").onclick = (e) => { e.stopPropagation(); it.name = ""; nameTouched = true; $("#eName").value = ""; $("#eNameX").hidden = true; $("#eName").focus(); };
+    $("#ePoint").onchange = () => { it.point = $("#ePoint").checked; };
     $("#eMemo").oninput = () => { it.memo = $("#eMemo").value; };
     $("#eAway").onchange = () => { it.away = $("#eAway").checked; };
     if ($("#eAsOuter")) $("#eAsOuter").onchange = () => { it.asOuter = $("#eAsOuter").checked; redraw(); };
@@ -830,7 +857,10 @@ function openEditor(item, draft = null) {
       const bottom = typeOf(it.type).cat === "bottom";
       h += `<label class="f">이너 착용</label>
       <div class="chips"><button class="chip${it.inner ? "" : " on"}" data-inner="0">필요 없음</button><button class="chip${it.inner ? " on" : ""}" data-inner="1">${bottom ? "속바지·속치마 필요" : "이너 필요"}</button></div>
-      ${it.inner ? `<p class="muted" style="margin:6px 0 0">${bottom ? "추천할 때 속바지·속치마를 챙기라고 알려 줘요." : "추천할 때 옷장의 나시·반팔 티셔츠를 안에 같이 골라 줘요."}</p>` : ""}`;
+      ${it.inner && typeOf(it.type).cat === "top" ? `<label class="f">어떤 이너를 입을까요? <small class="muted">(여러 개 골라도 돼요)</small></label>
+      <div class="chips">${INNER_PICKS.map((x) => `<button class="chip${(it.innerPick || []).includes(x.id) ? " on" : ""}" data-ipick="${x.id}">${x.ko}</button>`).join("")}</div>
+      <p class="muted" style="margin:6px 0 0">${it.innerPick?.length ? `고른 것 중에서 날씨·옷 색에 맞는 걸 하나 같이 골라 줘요${it.innerPick.includes("heat") ? ` (히트텍은 ${HEAT_MAX}° 이하인 날만)` : ""}.` : "안 고르면 옷장의 나시·반팔 티셔츠 중에서 골라 줘요."}</p>`
+      : it.inner ? `<p class="muted" style="margin:6px 0 0">${bottom ? "추천할 때 속바지·속치마를 챙기라고 알려 줘요." : "추천할 때 옷장의 나시·반팔 티셔츠를 안에 같이 골라 줘요."}</p>` : ""}`;
     }
     // 셔츠·블라우스: 겉옷으로도 입을지 (예전에 넣은 셔츠는 켜져 있어요)
     if (typeOf(it.type).id === "shirt") h += `<label class="check"><input type="checkbox" id="eAsOuter" ${it.asOuter !== false ? "checked" : ""}>👔 겉옷으로도 입기 (티셔츠·나시·원피스 위에 걸치기)</label>
@@ -861,6 +891,7 @@ function openEditor(item, draft = null) {
       redraw();
     }
     if (b.dataset.inner) { it.inner = b.dataset.inner === "1"; innerTouched = true; redraw(); }
+    if (b.dataset.ipick) { const k = b.dataset.ipick, cur = it.innerPick || []; it.innerPick = INNER_PICKS.map((x) => x.id).filter((x) => (x === k ? !cur.includes(k) : cur.includes(x))); redraw(); }
     if (b.dataset.len) {
       // 반팔 티셔츠를 긴팔로 → 종류도 긴팔 티셔츠로, 반바지를 길게 → 슬랙스·면바지로
       const fx = LEN_FIXED[typeOf(it.type).id], nt = fx && LEN_SWAP[fx]?.[b.dataset.len];
@@ -880,11 +911,16 @@ function openEditor(item, draft = null) {
       if (!adj) { const c = await urlToCanvas(it.photo); adj = { cut: null, orig: c, W: c.width, H: c.height, init: { rot: 0, tilt: 0, z: 1, x: 0, y: 0 } }; adj.st = { ...adj.init, raw: true }; }
       openAdjust(adj, (photo) => { it.photo = photo; draw(); }, () => draw());
     }
+    if (x === "newphoto") {
+      // 새 사진 → 배경 지우기 → 사진 맞추기 → 다시 이 화면 (저장을 눌러야 바뀌어요)
+      photoJob = { done: (photo, a) => { it.photo = photo; adj = a; delete it.basic; draw(); toast("사진을 바꿨어요. 저장을 눌러 주세요"); }, cancel: () => draw() };
+      $("#fileIn").value = ""; $("#fileIn").click();
+    }
     if (x === "del" && confirm(`'${it.name}'을(를) 지울까요?`)) { await itemStore.remove(it.id); closeSheet(); toast("지웠어요"); }
     if (x === "save") {
       if (!it.name.trim()) it.name = autoName(it);
       const data = { ...(it.basic ? { basic: it.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color || "", pattern: it.pattern || "plain", sheer: hasSheer(it.type) ? it.sheer || "none" : "none", inner: hasInner(it.type) && !!it.inner,
-        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), seasons: curSeasons(), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
+        ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(typeOf(it.type).id === "shirt" ? { asOuter: it.asOuter !== false } : {}), ...(typeOf(it.type).cat === "top" && it.inner ? { innerPick: it.innerPick || [] } : {}), point: !!it.point, seasons: curSeasons(), name: it.name.trim(), memo: it.memo || "", away: !!it.away,
         photo: it.photo || null, createdAt: it.createdAt || Date.now() };
       b.disabled = true;
       try { await itemStore.set(it.id, data); closeSheet(); toast(isNew ? "옷장에 넣었어요 👕" : "저장했어요"); }
@@ -1173,9 +1209,12 @@ function openSheet(html, onClick, locked = false) {
 }
 function closeSheet() { $("#sheetBg").hidden = true; $("#sheet").innerHTML = ""; }
 
+// 이너 고르기용 옷(흰색 나시·히트텍 등) 그림: 옷장에 없으면 이 그림으로 보여요
+VIRTUAL_INNERS.forEach((v) => { v.photo = basicUrl(INNER_PICKS.find((p) => p.id === v.pick).basic, COLORS[v.color]); });
+
 // ---------- 시작 ----------
 function refresh() {
-  byId = Object.fromEntries(items.map((x) => [x.id, x]));
+  byId = Object.fromEntries([...VIRTUAL_INNERS, ...items].map((x) => [x.id, x]));   // 이너 고르기용 옷(흰색 나시 등)도 기록에서 보이게
   model = fit(logs, byId);
   if (view === "home") renderHome();
   if (view === "closet") renderCloset();
