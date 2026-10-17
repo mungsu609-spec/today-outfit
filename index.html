@@ -515,14 +515,14 @@ function renderHome() {
 function piecesHtml(list) {
   const L = layers(list);
   // 나시·히트텍 상의는 이너, 히트텍 하의는 바지 안이면 이너·치마 밑이면 스타킹 대신
-  const role = (it) => it === L.inner || (innerOnly(it) && typeOf(it.type).cat === "top") ? "이너"
+  const role = (it) => it === L.under ? "안에 받쳐 입기" : it === L.inner || (innerOnly(it) && typeOf(it.type).cat === "top") ? "이너"
     : isLegwear(it) ? (L.legUnder ? "이너" : typeOf(it.type).id === "heat_bottom" ? "스타킹 대신" : "")
     : it === L.outer && L.shirtOuter ? "겉옷 대신" : "";
   const notes = [];
   if (L.noInner) notes.push(L.noInner.innerPick?.length && typeOf(L.noInner.type).cat === "top"
     ? `💡 '${esc(L.noInner.name)}' 안에 이너를 같이 입으면 좋아요. (골라 둔 이너가 ${L.noInner.innerPick.every((x) => x === "heat") ? `히트텍뿐이라 ${HEAT_MAX}°보다 따뜻한 날엔 안 골랐어요` : "이 코디엔 안 맞았어요"})`
     : `💡 '${esc(L.noInner.name)}'${eun(L.noInner.name)} 비쳐서 안에 이너(나시 등)를 같이 입으면 좋아요. 옷장에 나시를 넣으면 같이 골라 줘요.`);
-  if (bareArms(list, L.outer) && !(L.outer && lenOf(L.outer) !== "sleeveless")) notes.push("💡 민소매 옷이에요. 위에 겉옷이나 셔츠를 걸치면 좋아요.");
+  if (bareArms(list) && !(L.outer && lenOf(L.outer) !== "sleeveless")) notes.push("💡 민소매 옷이에요. 위에 겉옷·셔츠를 걸치거나 안에 티셔츠를 받쳐 입으면 좋아요.");
   for (const b of L.bottomInner) notes.push(`💡 '${esc(b.name)}' 안에 속바지·속치마를 챙기세요.`);
   const pc = patternClash(list, [L.inner]);
   const pk = (id) => PATTERNS.find((p) => p.id === id)?.ko;
