@@ -25,6 +25,74 @@ export function bbox(src, { alpha = 128, frac = 0.03 } = {}) {
   return y0 < 0 || x0 < 0 ? null : { x0, y0, x1, y1 };
 }
 
+// ---------- 구멍 메우기 ----------
+// 흰 무늬·밝은 체크처럼 배경과 비슷한 옷 부분을 AI가 같이 지워서 생긴 구멍을 원래 사진으로 채워요.
+//  1) 옷 범위를 살짝 부풀렸다가 다시 줄여서(r픽셀) 테두리의 작은 파임·틈을 메우고
+//  2) 사진 가장자리와 이어진 빈 곳만 진짜 배경으로 보고, 옷 안에 갇힌 빈 곳은 옷으로 채워요.
+//     단, 옷 크기의 maxHole(3%)보다 큰 빈 곳은 바지 두 다리 사이 바닥처럼 진짜 배경일 수 있어서 그대로 둬요 ('큰 구멍까지'면 다 채움).
+//  결과: 새 canvas (src는 그대로). orig: 배경 지우기 전 원본 (크기가 다르면 맞춰요)
+export function fillHoles(src, orig, { alpha = 110, r = null, maxHole = 0.03 } = {}) {
+  const w = src.width, h = src.height, N = w * h;
+  const out = mk(w, h), g = out.getContext("2d");
+  g.drawImage(src, 0, 0);
+  const img = g.getImageData(0, 0, w, h), d = img.data;
+  const oc = mk(w, h); oc.getContext("2d").drawImage(orig, 0, 0, w, h);
+  const od = oc.getContext("2d").getImageData(0, 0, w, h).data;
+  r = r ?? Math.max(2, Math.round(Math.max(w, h) * 0.006));
+  const solid = new Uint8Array(N);
+  for (let i = 0; i < N; i++) solid[i] = d[i * 4 + 3] > alpha ? 1 : 0;
+  // 네모 창(2r+1) 안의 합 — 누적합으로 빠르게
+  const boxSum = (m, r) => {
+    const S = new Uint32Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += m[y * w + x]; S[(y + 1) * (w + 1) + x + 1] = S[y * (w + 1) + x + 1] + row; } }
+    return (x, y) => { const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), x1 = Math.min(w, x + r + 1), y1 = Math.min(h, y + r + 1);
+      return [S[y1 * (w + 1) + x1] - S[y0 * (w + 1) + x1] - S[y1 * (w + 1) + x0] + S[y0 * (w + 1) + x0], (x1 - x0) * (y1 - y0)]; };
+  };
+  const dil = new Uint8Array(N), s1 = boxSum(solid, r);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) dil[y * w + x] = s1(x, y)[0] > 0 ? 1 : 0;
+  const closed = new Uint8Array(N), s2 = boxSum(dil, r);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const [s, n] = s2(x, y); closed[y * w + x] = s === n ? 1 : 0; }
+  // 가장자리에서 시작해서 빈 곳을 따라 퍼지기 = 진짜 배경
+  const outside = new Uint8Array(N), stack = new Int32Array(N);
+  let sp = 0;
+  const push = (i) => { if (!outside[i] && !closed[i]) { outside[i] = 1; stack[sp++] = i; } };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+  while (sp) {
+    const i = stack[--sp], x = i % w;
+    if (x > 0) push(i - 1);
+    if (x < w - 1) push(i + 1);
+    if (i >= w) push(i - w);
+    if (i < N - w) push(i + w);
+  }
+  // 갇힌 빈 곳을 덩어리로 나눠서, 큰 덩어리는 배경으로 (outside에 더해요)
+  let area = 0;
+  for (let i = 0; i < N; i++) area += solid[i];
+  const seen = new Uint8Array(N), comp = new Int32Array(N);
+  for (let s0 = 0; s0 < N; s0++) {
+    if (seen[s0] || outside[s0] || solid[s0]) continue;
+    let n = 0, top = 0;
+    seen[s0] = 1; stack[top++] = s0;
+    while (top) {
+      const i = stack[--top], x = i % w; comp[n++] = i;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i >= w ? i - w : -1, i < N - w ? i + w : -1])
+        if (j >= 0 && !seen[j] && !outside[j] && !solid[j]) { seen[j] = 1; stack[top++] = j; }
+    }
+    if (n > maxHole * area) for (let k = 0; k < n; k++) outside[comp[k]] = 1;
+  }
+  // 옷 안쪽(배경에서 2픽셀 넘게 떨어진 곳)은 반쯤 지워진 곳도 원래대로 진하게, 테두리 2픽셀은 AI 그대로(부드럽게)
+  const s3 = boxSum(outside, 2);
+  let filled = 0;
+  for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
+    if (outside[i] || d[i * 4 + 3] === 255 || (solid[i] && s3(x, y)[0] > 0)) continue;
+    const k = i * 4;
+    d[k] = od[k]; d[k + 1] = od[k + 1]; d[k + 2] = od[k + 2]; d[k + 3] = 255; filled++;
+  }
+  g.putImageData(img, 0, 0);
+  out.filled = filled / N;   // 채운 양 (시험용)
+  return out;
+}
+
 // 배경이 투명한 canvas → 옷 부분만 남게 잘라요 (가장자리 여유 4%) — AI가 옷을 알아볼 때 써요
 export function cutout(src) {
   const b = bbox(src);

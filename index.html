@@ -192,6 +192,9 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .adj-frame canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .adj-tools { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 6px; margin-top: 10px; }
 .adj-tools .btn { padding: 10px 4px; font-size: 14px; }
+.adj-frame.brush { cursor: crosshair; }
+.brush-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.brush-row input[type=range] { flex: 1; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
 .edit-photo { display: block; margin: 8px auto 0; }
 .photo-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
@@ -289,7 +292,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 </script>
 <script type="module">
 import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf, LEN_FIXED, LEN_SWAP, lenKind, defaultLen, lenOf, lenWord, SHEER, hasSheer, hasInner, layers, patternClash, SEASONS, seasonsOf, guessSeasons, INNER_PICKS, VIRTUAL_INNERS, HEAT_MAX, pointCount } from "./catalog.js";
-import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk } from "./photo.js";
+import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints } from "./model.js";
 
@@ -695,13 +698,13 @@ $("#fileIn").addEventListener("change", async () => {
   };
   $("#sheetBg").hidden = false; $("#sheetBg").onclick = null; $("#sheet").onclick = null;
   show(0.05);
-  let orig, bg = null, cut = null, ai = null, color = null;
+  let orig, bg = null, cut = null, ai = null, color = null, fills = null;
   try {
     orig = await fileToCanvas(file);
     cur = 1; show(0.15, "처음 한 번은 AI 파일을 받느라 1~2분 걸릴 수 있어요");
     const A = await import("./ai.js");
     bg = await A.removeBg(orig, (p, t) => show(0.15 + p * 0.35, t));
-    cut = cutout(bg);
+    fills = {}; cut = cutout(holeCut({ bg, orig, hole: "small", strokes: [], fills }));   // 구멍 메운 걸로 색·종류를 봐요
     color = mainColor(cut);
     if (!job) {
       cur = 2; show(0.55, "");
@@ -717,12 +720,39 @@ $("#fileIn").addEventListener("change", async () => {
   if (ai) warm = Math.min(5, Math.max(1, warm + (ai.thick > 0.75 ? 1 : ai.thick < 0.25 ? -1 : 0)));
   // 배경 지운 사진(잘리지 않은 전체)과 원본을 같이 들고 가서, 사람이 각도·크기를 맞춰요
   const W = (bg || orig).width, H = (bg || orig).height;
-  const init = bg ? fitState(W, H, bbox(bg, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
-  const adj = { cut: bg, orig, W, H, init, st: { ...init, raw: !bg } };
+  const adj = { bg, orig, W, H, hole: "small", strokes: [], fills: fills || {} };
+  if (bg) holeCut(adj);
+  const init = bg ? fitState(W, H, bbox(adj.cut, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
+  Object.assign(adj, { init, st: { ...init, raw: !bg } });
   if (job) return openAdjust(adj, (photo) => job.done(photo, adj), job.cancel);
   const draft = { type: t?.id, len: aiLen(t?.id || "tee_s", ai), warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai, adj };
   openAdjust(adj, (photo) => openEditor(null, { ...draft, photo }));
 });
+
+// ---------- 구멍 메우기 · 손가락 붓 ----------
+// adj.bg: AI가 배경을 지운 그대로, adj.hole: "off" | "small"(작은 구멍만, 기본) | "all"(큰 구멍까지)
+// adj.strokes: 손가락 붓 기록 [{ mode: "fix"(되살리기)|"erase"(지우기), r, pts:[[x,y]…] }] — 사진 픽셀 기준
+// → adj.cut = 구멍 메운 사진 + 붓 기록 (구멍 메우기를 바꿔도 붓으로 고친 건 남아요)
+function holeCut(adj) {
+  const base = adj.hole === "off" ? adj.bg : (adj.fills[adj.hole] ||= fillHoles(adj.bg, adj.orig, adj.hole === "all" ? { maxHole: Infinity } : {}));
+  const c = mk(base.width, base.height);
+  c.getContext("2d").drawImage(base, 0, 0);
+  for (const s of adj.strokes) for (let i = 0; i < s.pts.length; i++) brushSeg(c, adj.orig, s, s.pts[Math.max(0, i - 1)], s.pts[i]);
+  return (adj.cut = c);
+}
+// 붓 한 토막 (p0 → p1): 되살리기는 원본 사진을 그 자리에 다시 그리고, 지우기는 투명하게
+function brushSeg(c, orig, s, p0, p1) {
+  const g = c.getContext("2d"), r = s.r;
+  const line = (ctx, ox = 0, oy = 0) => { ctx.lineCap = ctx.lineJoin = "round"; ctx.lineWidth = r * 2; ctx.beginPath(); ctx.moveTo(p0[0] - ox, p0[1] - oy); ctx.lineTo(p1[0] - ox + 0.01, p1[1] - oy); ctx.stroke(); };
+  if (s.mode === "erase") { g.save(); g.globalCompositeOperation = "destination-out"; line(g); g.restore(); return; }
+  // 붓 자리만 원본으로: 작은 종이에 붓 모양을 그리고 그 안에만 원본을 칠해서 붙여요
+  const x0 = Math.floor(Math.min(p0[0], p1[0]) - r - 2), y0 = Math.floor(Math.min(p0[1], p1[1]) - r - 2);
+  const t = mk(Math.abs(p1[0] - p0[0]) + r * 2 + 4, Math.abs(p1[1] - p0[1]) + r * 2 + 4), tg = t.getContext("2d");
+  line(tg, x0, y0);
+  tg.globalCompositeOperation = "source-in";
+  tg.drawImage(orig, -x0, -y0, c.width, c.height);
+  g.drawImage(t, x0, y0);
+}
 
 // ---------- 사진 맞추기 ----------
 // adj = { cut: 배경 지운 canvas|null, orig: 원본 canvas, W, H, init: 처음 상태, st: 지금 상태 }
@@ -731,21 +761,43 @@ $("#fileIn").addEventListener("change", async () => {
 function openAdjust(adj, done, cancel = null) {
   const st = { ...adj.st };
   const F = Math.min(300, $("#sheet").clientWidth - 32 || 300);
+  // 손가락 붓: 취소하면 이 화면에서 칠한 것·구멍 메우기를 되돌려요
+  let tool = "move", stroke = null, brushSize = 4;   // 붓 크기 1~10 (네모 크기의 1%씩)
+  const keep = adj.bg ? { n: adj.strokes.length, hole: adj.hole } : null;
   openSheet(`<div class="sheet-head"><h2>사진 맞추기</h2></div>
     <p class="muted" style="margin:0 0 10px">한 손가락으로 끌면 옮겨지고, 두 손가락을 벌리거나 좁히면 커지고 작아져요. <b>파란 네모 안</b>에 보이는 그대로 저장돼요.</p>
     <div class="adj-frame" id="adjBox" style="width:${F}px;height:${F}px"><canvas id="adjCv"></canvas></div>
     <div class="adj-tools"><button class="btn" data-j="left">↺ 왼쪽</button><button class="btn" data-j="right">↻ 오른쪽</button><button class="btn" data-j="out">－ 작게</button><button class="btn" data-j="in">＋ 크게</button></div>
     <label class="f">살짝 기울이기 <span id="adjTiltV">${st.tilt}°</span></label>
     <input type="range" id="adjTilt" min="-45" max="45" step="1" value="${st.tilt}">
-    ${adj.cut ? `<label class="f">사진</label><div class="chips"><button class="chip${st.raw ? "" : " on"}" data-raw="0">배경 지운 사진</button><button class="chip${st.raw ? " on" : ""}" data-raw="1">원본 사진 (배경이 이상하면)</button></div>` : ""}
+    ${adj.bg ? `<label class="f">사진</label><div class="chips"><button class="chip${st.raw ? "" : " on"}" data-raw="0">배경 지운 사진</button><button class="chip${st.raw ? " on" : ""}" data-raw="1">원본 사진 (배경이 이상하면)</button></div>
+    <label class="f">구멍 메우기 <small class="muted">(흰 무늬가 같이 지워졌을 때)</small></label>
+    <div class="chips">${[["off", "끄기"], ["small", "작은 구멍만"], ["all", "큰 구멍까지"]].map(([k, ko]) => `<button class="chip${adj.hole === k ? " on" : ""}" data-hole="${k}">${ko}</button>`).join("")}</div>
+    <p class="muted" style="margin:6px 0 0">'큰 구멍까지'는 바지 두 다리 사이 바닥처럼 옷에 둘러싸인 배경도 채워요.</p>
+    <label class="f">손가락으로 고치기</label>
+    <div class="chips">${[["move", "✋ 옮기기·확대"], ["fix", "🖌️ 되살리기"], ["erase", "🧽 지우기"]].map(([k, ko]) => `<button class="chip${tool === k ? " on" : ""}" data-tool="${k}">${ko}</button>`).join("")}</div>
+    <div class="brush-row" id="brushRow" ${tool === "move" ? "hidden" : ""}><span class="muted">붓 크기</span><input type="range" id="brushSize" min="1" max="10" step="1" value="${brushSize}"><button class="btn" data-j="undo" ${adj.strokes.length ? "" : "disabled"}>↶ 되돌리기</button></div>
+    <p class="muted" style="margin:6px 0 0" id="brushTip">${tool === "move" ? "되살리기: 지워진 옷 부분을 손가락으로 문지르면 원래대로 돌아와요. 지우기: 남은 배경을 문질러 지워요. (붓을 쓸 때도 두 손가락은 확대·옮기기)" : tool === "fix" ? "지워진 옷 부분을 문지르면 원래 사진으로 돌아와요. 크게 확대하면 더 꼼꼼하게 칠할 수 있어요." : "남은 배경을 문지르면 지워져요."}</p>` : ""}
     <div class="row" style="margin-top:16px"><button class="btn ghost" data-j="reset">처음대로</button><span class="spacer"></span>${cancel ? `<button class="btn" data-j="cancel">취소</button>` : ""}<button class="btn primary" data-j="ok">이대로 쓰기</button></div>`, (e) => {
     const r = e.target.closest("[data-raw]");
     if (r) { st.raw = r.dataset.raw === "1"; $$("[data-raw]").forEach((x) => x.classList.toggle("on", x === r)); paint(); return; }
+    const hb = e.target.closest("[data-hole]");
+    if (hb) { adj.hole = hb.dataset.hole; holeCut(adj); st.raw = false; $$("[data-hole]").forEach((x) => x.classList.toggle("on", x === hb)); $$("[data-raw]").forEach((x) => x.classList.toggle("on", x.dataset.raw === "0")); paint(); return; }
+    const tb = e.target.closest("[data-tool]");
+    if (tb) {
+      tool = tb.dataset.tool;
+      $$("[data-tool]").forEach((x) => x.classList.toggle("on", x === tb));
+      $("#brushRow").hidden = tool === "move"; box.classList.toggle("brush", tool !== "move");
+      $("#brushTip").textContent = tool === "move" ? "되살리기: 지워진 옷 부분을 손가락으로 문지르면 원래대로 돌아와요. 지우기: 남은 배경을 문질러 지워요." : tool === "fix" ? "지워진 옷 부분을 문지르면 원래 사진으로 돌아와요. 크게 확대하면 더 꼼꼼하게 칠할 수 있어요." : "남은 배경을 문지르면 지워져요.";
+      if (tool !== "move" && st.raw) { st.raw = false; $$("[data-raw]").forEach((x) => x.classList.toggle("on", x.dataset.raw === "0")); paint(); }
+      return;
+    }
     const j = e.target.closest("[data-j]")?.dataset.j;
     if (j === "left" || j === "right") spin(j === "left" ? -90 : 90, true);
     if (j === "in" || j === "out") zoom(j === "in" ? 1.15 : 1 / 1.15, 0, 0);
     if (j === "reset") { Object.assign(st, adj.init); $("#adjTilt").value = st.tilt; $("#adjTiltV").textContent = st.tilt + "°"; paint(); }
-    if (j === "cancel") cancel();
+    if (j === "undo" && adj.strokes.length) { adj.strokes.pop(); holeCut(adj); paint(); undoBtn(); }
+    if (j === "cancel") { if (keep) { adj.strokes.length = keep.n; adj.hole = keep.hole; holeCut(adj); } cancel(); }
     if (j === "ok") {
       const c = mk(420, 420);
       paintFrame(c.getContext("2d"), 420, src(), st, adj.W, adj.H);
@@ -757,6 +809,14 @@ function openAdjust(adj, done, cancel = null) {
   cv.width = cv.height = Math.round(F * dpr);
   const g = cv.getContext("2d");
   const src = () => (st.raw || !adj.cut ? adj.orig : adj.cut);
+  if ($("#brushSize")) $("#brushSize").oninput = () => { brushSize = +$("#brushSize").value; };
+  const undoBtn = () => { const b = $("[data-j=undo]"); if (b) b.disabled = !adj.strokes.length; };
+  // 네모 위 점(가운데 기준, 네모 크기 1) → 사진 픽셀 자리 (paintFrame을 거꾸로)
+  const toSrc = ([nx, ny]) => {
+    const px = st.z / Math.max(adj.W, adj.H), [u, v] = turn(nx - st.x, ny - st.y, -(st.rot + st.tilt));
+    return [u / px + adj.W / 2, v / px + adj.H / 2];
+  };
+  const brushR = () => (brushSize * 0.01) / (st.z / Math.max(adj.W, adj.H));
   let raf = 0;
   const paint = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => paintFrame(g, cv.width, src(), st, adj.W, adj.H)); };
   // 네모 가운데를 축으로 돌리기
@@ -770,11 +830,20 @@ function openAdjust(adj, done, cancel = null) {
   // 손가락 따라가기
   const pts = new Map();
   const at = (e) => { const r = box.getBoundingClientRect(); return [(e.clientX - r.left) / r.width - 0.5, (e.clientY - r.top) / r.height - 0.5]; };
-  box.addEventListener("pointerdown", (e) => { box.setPointerCapture(e.pointerId); pts.set(e.pointerId, at(e)); });
+  box.addEventListener("pointerdown", (e) => {
+    box.setPointerCapture(e.pointerId); pts.set(e.pointerId, at(e));
+    // 붓: 한 손가락이면 칠하기 시작, 두 번째 손가락이 닿으면 칠하기를 멈추고 확대·옮기기
+    if (tool !== "move" && adj.cut && pts.size === 1) {
+      const p = toSrc(at(e));
+      stroke = { mode: tool, r: brushR(), pts: [p] };
+      adj.strokes.push(stroke); brushSeg(adj.cut, adj.orig, stroke, p, p); paint(); undoBtn();
+    } else stroke = null;
+  });
   box.addEventListener("pointermove", (e) => {
     if (!pts.has(e.pointerId)) return;
     const prev = pts.get(e.pointerId), now = at(e);
     pts.set(e.pointerId, now);
+    if (stroke && pts.size === 1) { const p = toSrc(now); brushSeg(adj.cut, adj.orig, stroke, stroke.pts[stroke.pts.length - 1], p); stroke.pts.push(p); paint(); return; }
     if (pts.size === 1) { st.x += now[0] - prev[0]; st.y += now[1] - prev[1]; paint(); return; }
     const other = [...pts].find(([id]) => id !== e.pointerId)[1];
     const d0 = Math.hypot(prev[0] - other[0], prev[1] - other[1]), d1 = Math.hypot(now[0] - other[0], now[1] - other[1]);
@@ -782,7 +851,7 @@ function openAdjust(adj, done, cancel = null) {
     st.x += m1[0] - m0[0]; st.y += m1[1] - m0[1];   // 두 손가락 가운데가 움직인 만큼 옮기고
     if (d0 > 0.01) zoom(d1 / d0, m1[0], m1[1]); else paint();   // 벌어진 만큼 확대
   });
-  const up = (e) => pts.delete(e.pointerId);
+  const up = (e) => { pts.delete(e.pointerId); if (!pts.size) stroke = null; };
   box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
   box.addEventListener("wheel", (e) => { e.preventDefault(); const [mx, my] = at(e); zoom(Math.exp(-e.deltaY * 0.0015), mx, my); }, { passive: false });
   box.addEventListener("gesturestart", (e) => e.preventDefault());   // 아이폰: 화면 전체가 확대되지 않게
