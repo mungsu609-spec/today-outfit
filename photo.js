@@ -246,7 +246,7 @@ function familyName(r, g, b) {
   return l > 0.55 ? "분홍" : "보라";
 }
 
-// 자세한 색 이름 (제일 많은 갈래의 평균 색으로 정해요): 차콜·연회색·아이보리·카멜·올리브·민트·연청·라벤더·코랄·와인·머스타드 등
+// 자세한 색 이름 (제일 많은 갈래의 평균 색으로 정해요): 차콜·연회색·아이보리·카멜·올리브·민트·연청·라벤더·연분홍·코랄·와인·머스타드 등
 export function colorName(r, g, b) {
   const [h, s, l] = hsl(r, g, b);
   if (l < 0.14) return "검정";
@@ -261,7 +261,7 @@ export function colorName(r, g, b) {
   if (h >= 10 && h < 45 && l < 0.45) return "갈색";
   if (h >= 45 && h < 100 && s < 0.45 && l < 0.5) return h < 70 ? "카키" : "올리브";
   if (h >= 5 && h < 12 && l > 0.58 && l < 0.8 && s > 0.5) return "코랄";
-  if (h < 12 || h >= 340) return l > 0.72 ? "분홍" : l < 0.35 ? "와인" : "빨강";
+  if (h < 12 || h >= 340) return l > 0.84 ? "연분홍" : l > 0.72 ? "분홍" : l < 0.35 ? "와인" : "빨강";
   if (h < 40) return l > 0.75 ? "베이지" : h < 25 && l > 0.58 && s > 0.5 ? "코랄" : "주황";
   if (h < 68) return l < 0.5 || (s < 0.65 && l < 0.6) ? "머스타드" : "노랑";
   if (h < 140) return "초록";
@@ -269,7 +269,7 @@ export function colorName(r, g, b) {
   if (h < 200) return "하늘색";
   if (h < 255) return l > 0.65 ? "하늘색" : "파랑";
   if (h < 290) return l > 0.68 ? "라벤더" : "보라";
-  return l > 0.55 ? "분홍" : "보라";
+  return l > 0.82 ? "연분홍" : l > 0.55 ? "분홍" : "보라";
 }
 
 export { COLORS };
