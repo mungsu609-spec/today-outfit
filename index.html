@@ -118,6 +118,15 @@ label.f { display: block; font-size: 13px; color: var(--sub); margin: 14px 0 6px
 .item .wm { font-size: 11px; color: var(--sub); letter-spacing: 1px; }
 .item.away { opacity: .5; }
 .badge { position: absolute; top: 12px; left: 12px; font-size: 11px; background: rgba(0,0,0,.6); color: #fff; padding: 1px 7px; border-radius: 999px; }
+.badge.check { left: auto; right: 12px; background: var(--accent); }
+.batch { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
+.batch .progress { margin: 8px 0 2px; }
+.check-bar { display: block; width: 100%; text-align: left; border: 1px solid var(--accent); background: var(--accent-soft); color: var(--ink); border-radius: 14px; padding: 10px 12px; margin: 0 0 10px; font-size: 14px; }
+.check-note { background: var(--accent-soft); border-radius: 12px; padding: 8px 12px; margin: 0 0 10px; font-size: 14px; }
+.t-row { display: flex; gap: 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.t-row b { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-row span { color: var(--sub); }
+.t-row.warn span { color: #c0392b; }
 .empty { text-align: center; color: var(--sub); padding: 36px 12px; }
 .empty b { display: block; font-size: 40px; margin-bottom: 6px; }
 .fab { position: fixed; right: max(16px, calc(50% - 254px)); bottom: calc(env(safe-area-inset-bottom) + 80px); border: 0; border-radius: 999px; padding: 14px 20px; background: var(--accent); color: var(--accent-ink); font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 5; }
@@ -259,6 +268,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
     <div class="search-row" id="searchRow" hidden><input type="search" id="closetQ" placeholder="이름·색·종류로 찾기 (예: 검정 니트)" autocomplete="off"><button id="qClear" aria-label="지우기" hidden>✕</button></div>
     <div class="chips scroll" id="seasonChips"></div>
     <div class="chips scroll" id="catChips"></div>
+    <div id="closetNote"></div>
     <div class="grid" id="closetGrid"></div>
     <button class="fab" id="btnAdd">＋ 옷 추가</button>
   </section>
@@ -305,6 +315,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 <div class="sheet-bg" id="sheetBg" hidden><div class="sheet" id="sheet"></div></div>
 <input type="file" id="fileIn" accept="image/*" hidden>
+<input type="file" id="filesIn" accept="image/*" multiple hidden>
 <div class="toast" id="toast"></div>
 
 <script src="config.js"></script>
@@ -337,6 +348,7 @@ import { CATS, TYPES, PATTERNS, WARM_KO, typeOf, SLEEVE, LEG, HEM, hasHem, hemOf
 import { R, RULES, RULES_ID, DEFAULTS, setRules, changedRules, rulesKey } from "./rules.js";
 import { fileToCanvas, cutout, bbox, onWhite, rotate, toStored, mainColor, COLORS, paintFrame, frameToSrc, turn, fitState, urlToCanvas, mk, fillHoles } from "./photo.js";
 import { BASIC_KINDS, OLD_BASIC, basicUrl, basicCanvas } from "./basics.js";
+import { splitLines, parseLine } from "./textadd.js";
 import { itemWarmth, outfitWarmth, base, FEEL, fit, target, degOffset, dayFeel, recommend, genericOutfit, fitWord, SLOTS, slotFeels, overallFeel, evalSlots, feelPoints, bareArms } from "./model.js";
 
 const VERSION = "v9";
@@ -673,8 +685,9 @@ let catFilter = ls.get("wx.cat", "all"), seasonFilter = ls.get("wx.season", "all
 // 🔍 찾기: 이름·메모·색·종류·무늬·길이·계절에서 찾아요. 띄어 쓴 낱말은 모두 들어 있는 옷만 (예: "검정 니트").
 //  찾는 중엔 계절·종류 고르기와 상관없이 옷장 전체에서 찾아요.
 let closetQ = "";
+let batch = null;   // 여러 장 넣는 중: { total, done, fail } (아래 '여러 장 한꺼번에 넣기')
 const searchText = (it) => [it.name, it.memo, it.color, typeOf(it.type).ko, CATS[typeOf(it.type).cat]?.ko, PATTERNS.find((p) => p.id === (it.pattern || "plain"))?.ko, lenWord(it),
-  ...SEASONS.filter((x) => seasonsOf(it).includes(x.id)).map((x) => x.ko), it.point ? "포인트" : "", it.away ? "빼 둠" : ""].filter(Boolean).join(" ").toLowerCase();
+  ...SEASONS.filter((x) => seasonsOf(it).includes(x.id)).map((x) => x.ko), it.point ? "포인트" : "", it.away ? "빼 둠" : "", it.check ? "확인 필요" : ""].filter(Boolean).join(" ").toLowerCase();
 function renderCloset() {
   // 계절 고르기 (전체 / 봄·가을 / 여름 / 겨울) → 그 안에서 종류별
   const sCount = (k) => items.filter((it) => seasonsOf(it).includes(k)).length;
@@ -688,10 +701,14 @@ function renderCloset() {
     .map(([k, ko]) => `<button class="chip${catFilter === k ? " on" : ""}" data-cat="${k}">${ko}${k !== "all" && counts[k] ? ` ${counts[k]}` : ""}</button>`).join("");
   const words = closetQ.toLowerCase().split(/\s+/).filter(Boolean);
   $("#seasonChips").hidden = $("#catChips").hidden = !!words.length;
+  // 여러 장 넣는 중이면 진행 막대, AI가 짐작해서 넣은 옷('확인 필요')이 있으면 모아 보기 버튼
+  const nCheck = items.filter((it) => it.check).length;
+  $("#closetNote").innerHTML = (batch ? `<div class="batch">📷 사진 ${batch.total}장 중 <b>${batch.done}장</b> 넣었어요${batch.fail ? ` (${batch.fail}장 실패)` : ""}<div class="progress"><div style="width:${Math.round((batch.done / batch.total) * 100)}%"></div></div><small class="muted">앱을 켜 둔 채로 기다려 주세요. 다른 화면은 봐도 돼요.</small></div>` : "")
+    + (nCheck && !words.length ? `<button class="check-bar" data-check>🔎 <b>확인 필요 ${nCheck}벌</b> — 눌러서 모아 보고, 옷마다 맞는지 보고 '저장'을 눌러 주세요</button>` : "");
   const list = (words.length ? items.filter((it) => { const t = searchText(it); return words.every((w) => t.includes(w)); }) : inSeason.filter((it) => catFilter === "all" || typeOf(it.type).cat === catFilter))
     .sort((a, b) => Object.keys(CATS).indexOf(typeOf(a.type).cat) - Object.keys(CATS).indexOf(typeOf(b.type).cat) || (a.warm || 0) - (b.warm || 0) || (b.createdAt || 0) - (a.createdAt || 0));
   $("#closetGrid").innerHTML = list.length ? list.map((it) => `<button class="item${it.away ? " away" : ""}" data-id="${it.id}">
-      ${it.away ? `<span class="badge">빼 둠</span>` : ""}<div class="ph">${phHtml(it)}</div>
+      ${it.away ? `<span class="badge">빼 둠</span>` : ""}${it.check ? `<span class="badge check">확인 필요</span>` : ""}<div class="ph">${phHtml(it)}</div>
       <div class="nm">${esc(it.name)}</div><div class="wm">${"●".repeat(it.warm || 1)}${"○".repeat(5 - (it.warm || 1))} ${SEASONS.filter((x) => seasonsOf(it).includes(x.id)).map((x) => x.emoji).join("")}</div></button>`).join("")
     : `<div class="empty" style="grid-column:1/-1"><b>👕</b>${words.length ? `'${esc(closetQ.trim())}'에 맞는 옷이 없어요` : items.length ? (seasonFilter !== "all" && !inSeason.length ? "이 계절 옷이 없어요" : "이 종류의 옷이 없어요") : "아직 옷이 없어요.<br>오른쪽 아래 <b style='display:inline;font-size:inherit'>＋ 옷 추가</b>로 사진을 찍어 넣어 보세요."}</div>`;
 }
@@ -707,6 +724,10 @@ $("#btnSearch").addEventListener("click", () => {
 });
 $("#closetQ").addEventListener("input", () => setQ($("#closetQ").value));
 $("#qClear").addEventListener("click", () => { setQ(""); $("#closetQ").focus(); });
+$("#closetNote").addEventListener("click", (e) => {
+  if (!e.target.closest("[data-check]")) return;
+  $("#searchRow").hidden = false; $("#btnSearch").classList.add("on"); setQ("확인 필요");
+});
 // 기본 옷: 종류(나시·반팔·긴팔 티셔츠·히트텍 상하의·스타킹)를 누르고 색을 고르면 바로 옷장에 들어가요. 그림은 basics.js가 고른 색으로 그려요.
 const basicKey = (it) => OLD_BASIC[it.basic] || it.basic;   // 예전 'tank-black' → 'tank:검정'
 const BASIC_COLORS = Object.keys(COLORS).filter((k) => k !== "여러색");
@@ -724,7 +745,10 @@ function openAdd() {
   openSheet(`<div class="sheet-head"><h2>옷 추가</h2><button class="btn ghost" data-x="close">닫기</button></div>
   <p class="muted">옷 하나를 바닥이나 침대에 펼쳐 놓고 위에서 찍으면 배경이 깔끔하게 지워져요.</p>
   <button class="btn primary block" data-x="photo">📷 사진 찍기·고르기</button>
+  <button class="btn block" style="margin-top:8px" data-x="photos">🖼️ 여러 장 한꺼번에 넣기</button>
+  <button class="btn block" style="margin-top:8px" data-x="text">📝 글로 한꺼번에 넣기</button>
   <button class="btn block" style="margin-top:8px" data-x="nophoto">✏️ 사진 없이 추가</button>
+  <p class="muted" style="margin:8px 0 0">여러 장: 사진첩에서 여러 장을 고르면 AI가 한 장씩 알아서 넣어요(사진 맞추기 없이). 다 넣은 뒤 '확인 필요'인 옷만 봐 주세요.</p>
   <label class="f">기본 옷 바로 넣기</label>
   <p class="muted" style="margin:0">종류를 누르고 색을 고르면 바로 옷장에 들어가요.</p>
   <div class="pick-grid">${BASIC_KINDS.map((k) => `<button class="pick" data-basic="${k.id}"><div class="ph"><img src="${basicUrl(k.id, "#e9e6e1")}" alt=""></div><div class="nm">${k.ko}${count(k) ? ` <b>${count(k)}</b>` : ""}</div></button>`).join("")}</div>`, async (e) => {
@@ -732,7 +756,10 @@ function openAdd() {
     if (k) return openBasic(BASIC_KINDS.find((x) => x.id === k));
     const x = e.target.closest("[data-x]")?.dataset.x;
     if (x === "close") closeSheet();
+    if ((x === "photo" || x === "photos") && batch) return toast("사진을 여러 장 넣는 중이에요. 다 넣은 뒤에 해 주세요");
     if (x === "photo") { photoJob = null; $("#fileIn").value = ""; $("#fileIn").click(); }
+    if (x === "photos") { $("#filesIn").value = ""; $("#filesIn").click(); }
+    if (x === "text") openText();
     if (x === "nophoto") openEditor(null);
   });
 }
@@ -776,36 +803,117 @@ $("#fileIn").addEventListener("change", async () => {
   };
   $("#sheetBg").hidden = false; $("#sheetBg").onclick = null; $("#sheet").onclick = null;
   show(0.05);
-  let orig, bg = null, cut = null, ai = null, color = null, fills = null;
-  try {
-    orig = await fileToCanvas(file);
-    cur = 1; show(0.15, "처음 한 번은 AI 파일을 받느라 1~2분 걸릴 수 있어요");
-    const A = await import("./ai.js");
-    bg = await A.removeBg(orig, (p, t) => show(0.15 + p * 0.35, t));
-    fills = {}; cut = cutout(holeCut({ bg, orig, hole: "small", strokes: [], fills }));   // 구멍 메운 걸로 색·종류를 봐요
-    color = mainColor(cut);
-    if (!job) {
-      cur = 2; show(0.55, "");
-      ai = await A.classify(cut, (p, t) => show(0.55 + p * 0.4, t), { onWhite, rotate });
-    }
-  } catch (err) {
-    console.error(err);
-    toast("AI가 잘 안 됐어요. 직접 골라 주세요");
-  }
-  if (!orig) { if (job) job.cancel(); else closeSheet(); return toast("사진을 읽지 못했어요"); }
-  const t = ai?.types?.[0];
-  let warm = typeOf(t?.id || "tee_s").warm;
-  if (ai) warm = Math.min(5, Math.max(1, warm + (ai.thick > 0.75 ? 1 : ai.thick < 0.25 ? -1 : 0)));
-  // 배경 지운 사진(잘리지 않은 전체)과 원본을 같이 들고 가서, 사람이 각도·크기를 맞춰요
-  const W = (bg || orig).width, H = (bg || orig).height;
-  const adj = { bg, orig, W, H, hole: "off", strokes: [], fills: fills || {} };   // 구멍 메우기는 처음엔 끄기 (10-18 cgy)
-  if (bg) holeCut(adj);
-  const init = bg ? fitState(W, H, bbox(adj.cut, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
-  Object.assign(adj, { init, st: { ...init, raw: !bg } });
+  let r;
+  try { r = await analyzePhoto(file, { classify: !job, onStep: (i) => { cur = i; }, onProg: show }); }
+  catch (err) { console.error(err); if (job) job.cancel(); else closeSheet(); return toast("사진을 읽지 못했어요"); }
+  if (r.failed) toast("AI가 잘 안 됐어요. 직접 골라 주세요");
+  const adj = adjFrom(r);
   if (job) return openAdjust(adj, (photo) => job.done(photo, adj), job.cancel);
-  const draft = { type: t?.id, len: aiLen(t?.id || "tee_s", ai), warm, color: color || "", pattern: ai?.pattern?.p > 0.45 ? ai.pattern.id : "plain", ai, adj };
-  openAdjust(adj, (photo) => openEditor(null, { ...draft, photo }));
+  openAdjust(adj, (photo) => openEditor(null, { ...draftFrom(r), adj, photo }));
 });
+
+// 사진 한 장 → 원본·배경 지운 사진·AI 짐작 { orig, bg, ai, color, fills, failed } (한 장 넣기·여러 장 넣기가 같이 써요)
+//  사진을 못 읽으면 멈추고(throw), AI만 안 되면 failed로 알려요
+async function analyzePhoto(file, { classify = true, onStep = () => {}, onProg = () => {} } = {}) {
+  const r = { orig: await fileToCanvas(file), bg: null, ai: null, color: null, fills: {} };
+  try {
+    onStep(1); onProg(0.15, "처음 한 번은 AI 파일을 받느라 1~2분 걸릴 수 있어요");
+    const A = await import("./ai.js");
+    r.bg = await A.removeBg(r.orig, (p, t) => onProg(0.15 + p * 0.35, t));
+    const cut = cutout(holeCut({ bg: r.bg, orig: r.orig, hole: "small", strokes: [], fills: r.fills }));   // 구멍 메운 걸로 색·종류를 봐요
+    r.color = mainColor(cut);
+    if (classify) { onStep(2); onProg(0.55, ""); r.ai = await A.classify(cut, (p, t) => onProg(0.55 + p * 0.4, t), { onWhite, rotate }); }
+  } catch (err) { console.error(err); r.failed = true; }
+  return r;
+}
+// 배경 지운 사진(잘리지 않은 전체)과 원본을 같이 들고 가서, 사람이 각도·크기를 맞춰요
+function adjFrom(r) {
+  const W = (r.bg || r.orig).width, H = (r.bg || r.orig).height;
+  const adj = { bg: r.bg, orig: r.orig, W, H, hole: "off", strokes: [], fills: r.fills };   // 구멍 메우기는 처음엔 끄기 (10-18 cgy)
+  if (r.bg) holeCut(adj);
+  const init = r.bg ? fitState(W, H, bbox(adj.cut, { alpha: 40, frac: 0.01 }), r.ai?.rot || 0) : fitState(W, H, null);
+  return Object.assign(adj, { init, st: { ...init, raw: !r.bg } });
+}
+// AI 짐작 → 옷 정보 (종류·길이·두께·색·무늬)
+function draftFrom(r) {
+  const t = r.ai?.types?.[0];
+  let warm = typeOf(t?.id || "tee_s").warm;
+  if (r.ai) warm = Math.min(5, Math.max(1, warm + (r.ai.thick > 0.75 ? 1 : r.ai.thick < 0.25 ? -1 : 0)));
+  return { type: t?.id, len: aiLen(t?.id || "tee_s", r.ai), warm, color: r.color || "", pattern: r.ai?.pattern?.p > 0.45 ? r.ai.pattern.id : "plain", ai: r.ai };
+}
+// 옷 고치기 화면 없이 바로 넣을 옷 → 저장할 모양 ('저장'을 누른 것과 같은 기본값). check: 옷장에 '확인 필요' 표시
+function quickItem(d, check = true) {
+  const it = { type: d.type || "tee_s", color: d.color || "", pattern: d.pattern || "plain" };
+  it.warm = d.warm || typeOf(it.type).warm; it.len = d.len ?? defaultLen(it.type);
+  if (hasHem(it.type)) it.hem = d.hem || "knee";
+  return { ...(d.basic ? { basic: d.basic } : {}), type: it.type, len: lenOf(it), warm: it.warm, color: it.color, pattern: it.pattern, sheer: "none", inner: false,
+    ...(hasHem(it.type) ? { hem: hemOf(it) } : {}), ...(it.type === "shirt" ? { asOuter: true } : {}), point: false, seasons: guessSeasons(it),
+    name: d.name || autoName(it), memo: "", away: false, photo: d.photo || null, createdAt: Date.now(), ...(check ? { check: true } : {}) };
+}
+
+// ---------- 여러 장 한꺼번에 넣기 ----------
+// 한 장씩 차례로: 배경 지우기 → AI 짐작 → 처음 맞춘 그대로 사진 저장 → 옷장에 '확인 필요'로 넣기. 진행은 옷장 위 막대에.
+$("#filesIn").addEventListener("change", async () => {
+  const files = [...$("#filesIn").files];
+  if (!files.length || batch) return;
+  batch = { total: files.length, done: 0, fail: 0 };
+  closeSheet(); go("closet");
+  toast(`사진 ${files.length}장을 차례로 넣을게요`);
+  for (const f of files) {
+    try {
+      const r = await analyzePhoto(f);
+      const adj = adjFrom(r), c = mk(420, 420);
+      paintFrame(c.getContext("2d"), 420, adj.st.raw || !adj.cut ? adj.orig : adj.cut, adj.st, adj.W, adj.H);
+      await itemStore.set(uid(), quickItem({ ...draftFrom(r), photo: toStored(c, 420) }));
+    } catch (err) { console.error(err); batch.fail++; }
+    batch.done++; renderCloset();
+  }
+  const ok = batch.done - batch.fail, fail = batch.fail;
+  batch = null; renderCloset();
+  toast(`${ok}벌을 옷장에 넣었어요 👕${fail ? ` (${fail}장은 못 넣었어요)` : ""}`);
+});
+
+// ---------- 글로 한꺼번에 넣기 ----------
+// 한 줄에 한 벌 (쉼표로 나눠도 OK) → 종류·색·무늬·두께·길이를 찾아서 미리 보여 주고 한꺼번에 넣어요 (textadd.js)
+//  기본 옷 그림이 있는 종류(나시·티셔츠·히트텍·스타킹)는 그 색 그림을 같이 넣어요. 종류를 못 찾은 줄은 '확인 필요'로.
+let textDraft = "";
+function openText() {
+  openSheet(`<div class="sheet-head"><h2>글로 한꺼번에 넣기</h2><button class="btn ghost" data-x="back">← 뒤로</button></div>
+    <p class="muted" style="margin:0 0 8px">한 줄에 한 벌씩 적어 주세요(쉼표로 나눠도 돼요). 색·종류·무늬·두께·길이를 알아서 찾아요. 사진은 나중에 옷을 눌러 넣을 수 있어요.</p>
+    <textarea id="tIn" rows="6" placeholder="검정 니트&#10;연청 청바지&#10;흰색 줄무늬 셔츠&#10;두꺼운 베이지 코트&#10;반팔 티 흰색">${esc(textDraft)}</textarea>
+    <div id="tPrev" style="margin-top:8px"></div>
+    <button class="btn primary block" style="margin-top:12px" data-x="add" disabled>옷장에 넣기</button>`, async (e) => {
+    const x = e.target.closest("[data-x]")?.dataset.x;
+    if (x === "back") openAdd();
+    if (x === "add") {
+      const list = splitLines(textDraft).map(parseLine);
+      if (!list.length) return;
+      e.target.disabled = true;
+      try {
+        for (const d of list) {
+          const k = d.pattern === "plain" && d.color && BASIC_KINDS.find((b) => b.type === d.type && (!b.colors || b.colors.includes(d.color)));
+          const pic = k ? { photo: toStored(await basicCanvas(k.id, COLORS[d.color]), 420), basic: `${k.id}:${d.color}` } : {};
+          await itemStore.set(uid(), quickItem({ ...d, ...pic }, !d.known));
+        }
+        textDraft = ""; closeSheet(); go("closet");
+        const n = list.filter((d) => !d.known).length;
+        toast(`${list.length}벌을 옷장에 넣었어요 👕${n ? ` (${n}벌은 '확인 필요')` : ""}`);
+      } catch (err) { console.error(err); e.target.disabled = false; toast("넣지 못했어요"); }
+    }
+  });
+  const prev = () => {
+    const list = splitLines(textDraft).map(parseLine);
+    $("#tPrev").innerHTML = list.map((d) => {
+      const it = { type: d.type, len: d.len, hem: d.hem };
+      const bits = [d.known ? typeOf(d.type).ko : "⚠️ 종류를 못 찾았어요 → 반팔 티셔츠로 넣고 '확인 필요'", lenKind(d.type) && d.len !== defaultLen(d.type) ? lenWord(it) : "", d.color || "색 없음", d.pattern !== "plain" ? PATTERNS.find((p) => p.id === d.pattern).ko : "", WARM_KO[d.warm]];
+      return `<div class="t-row${d.known ? "" : " warn"}"><b>${esc(d.name)}</b><span>${bits.filter(Boolean).join(" · ")}</span></div>`;
+    }).join("");
+    $("[data-x=add]").disabled = !list.length;
+    $("[data-x=add]").textContent = list.length ? `${list.length}벌 옷장에 넣기` : "옷장에 넣기";
+  };
+  $("#tIn").oninput = () => { textDraft = $("#tIn").value; prev(); };
+  prev();
+}
 
 // ---------- 구멍 메우기 · 손가락 붓 ----------
 // adj.bg: AI가 배경을 지운 그대로, adj.hole: "off"(끄기, 기본) | "small"(작은 구멍만) | "all"(큰 구멍까지)
@@ -1032,6 +1140,7 @@ function openEditor(item, draft = null) {
   const draw = () => {
     const sug = ai ? ai.types.slice(0, 3).filter((x) => x.p >= 0.05) : [];
     openSheet(`<div class="sheet-head"><h2>${isNew ? "새 옷" : "옷 고치기"}</h2><button class="btn ghost" data-x="close">닫기</button></div>
+      ${it.check ? `<p class="check-note">🔎 한꺼번에 넣으면서 짐작한 옷이에요. 종류·색·두께가 맞는지 보고 <b>저장</b>을 누르면 '확인 필요'가 없어져요.</p>` : ""}
       <div class="preview">${it.photo ? `<img src="${it.photo}" alt="">` : CAT_EMOJI[typeOf(it.type).cat]}</div>
       <div class="photo-btns">${it.photo ? `<button class="btn edit-photo" data-x="adjust">📐 각도·크기 맞추기</button><button class="btn edit-photo" data-x="newphoto">🖼️ 사진 바꾸기</button>` : `<button class="btn edit-photo" data-x="newphoto">📷 사진 넣기</button>`}</div>
       <label class="f">종류${ai ? `<span class="ai-tag">AI 추천</span>` : ""}</label>
