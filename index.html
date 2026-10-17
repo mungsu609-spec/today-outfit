@@ -798,7 +798,7 @@ $("#fileIn").addEventListener("change", async () => {
   if (ai) warm = Math.min(5, Math.max(1, warm + (ai.thick > 0.75 ? 1 : ai.thick < 0.25 ? -1 : 0)));
   // 배경 지운 사진(잘리지 않은 전체)과 원본을 같이 들고 가서, 사람이 각도·크기를 맞춰요
   const W = (bg || orig).width, H = (bg || orig).height;
-  const adj = { bg, orig, W, H, hole: "small", strokes: [], fills: fills || {} };
+  const adj = { bg, orig, W, H, hole: "off", strokes: [], fills: fills || {} };   // 구멍 메우기는 처음엔 끄기 (10-18 cgy)
   if (bg) holeCut(adj);
   const init = bg ? fitState(W, H, bbox(adj.cut, { alpha: 40, frac: 0.01 }), ai?.rot || 0) : fitState(W, H, null);
   Object.assign(adj, { init, st: { ...init, raw: !bg } });
@@ -808,7 +808,7 @@ $("#fileIn").addEventListener("change", async () => {
 });
 
 // ---------- 구멍 메우기 · 손가락 붓 ----------
-// adj.bg: AI가 배경을 지운 그대로, adj.hole: "off" | "small"(작은 구멍만, 기본) | "all"(큰 구멍까지)
+// adj.bg: AI가 배경을 지운 그대로, adj.hole: "off"(끄기, 기본) | "small"(작은 구멍만) | "all"(큰 구멍까지)
 // adj.strokes: 손가락 붓 기록 [{ mode: "fix"(되살리기)|"erase"(지우기), r, pts:[[x,y]…] } | { mode: "wand"(눌러서 지우기), pt:[x,y], tol }] — 사진 픽셀 기준
 // → adj.cut = 구멍 메운 사진 + 붓 기록 (구멍 메우기를 바꿔도 붓으로 고친 건 남아요)
 function holeCut(adj) {
