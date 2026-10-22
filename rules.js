@@ -11,8 +11,8 @@ export const RULES = [
     { id: "tankInner", on: true, ko: "나시는 이너로만", desc: "끄면 나시도 상의로 추천해요" },
     { id: "heatOn", on: true, ko: "옷장의 히트텍 같이 고르기", desc: "쌀쌀한 날 긴팔 옷 안에 히트텍 상의, 바지 안에 히트텍 하의" },
     { id: "heatMax", num: 15, min: 5, max: 22, unit: "° 이하", ko: "히트텍 입는 온도", desc: "'어떤 이너' 고르기의 히트텍도 이 온도 이하인 날만" },
-    { id: "heatStocking", on: true, dep: "heatOn", ko: "히트텍 하의를 스타킹 대신으로도", desc: "치마·원피스·짧은 하의 밑에" },
-    { id: "stockingOn", on: true, ko: "스타킹 같이 고르기", desc: "치마·원피스·짧은 하의 밑에" },
+    { id: "heatStocking", on: true, dep: "heatOn", ko: "히트텍 하의를 스타킹 대신으로도", desc: "치마·원피스 밑에" },
+    { id: "stockingOn", on: true, ko: "스타킹 같이 고르기", desc: "치마·원피스 밑에만" },
     { id: "stockingMax", num: 20, min: 10, max: 26, unit: "° 이하", dep: "stockingOn", ko: "스타킹 신는 온도" },
   ] },
   { group: "민소매 옷", list: [
@@ -24,6 +24,7 @@ export const RULES = [
     { id: "shortMin", num: 20, min: 12, max: 30, unit: "° 이상", ko: "반바지·짧은 치마·샌들" },
     { id: "outerMax", num: 25, min: 15, max: 32, unit: "° 이하", ko: "겉옷" },
     { id: "shirtOuter", on: true, ko: "셔츠를 겉옷 대신 걸치기", desc: "옷마다 '겉옷으로도 입기'를 켠 셔츠만" },
+    { id: "noShortOuter", on: true, ko: "긴팔 위엔 반팔 겉옷 안 걸치기", desc: "긴팔 옷 위에 반팔 셔츠·겉옷은 추천하지 않아요" },
     { id: "shirtMax", num: 28, min: 15, max: 34, unit: "° 이하", dep: "shirtOuter", ko: "셔츠 겉옷 대신" },
     { id: "coatMax", num: 15, min: 5, max: 22, unit: "° 이하", ko: "코트" },
     { id: "paddingMax", num: 10, min: 0, max: 18, unit: "° 이하", ko: "패딩" },

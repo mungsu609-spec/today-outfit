@@ -37,7 +37,7 @@ export const TYPES = [
   { id: "jeans",       ko: "청바지",          cat: "bottom", warm: 3, en: ["blue jeans", "denim pants"] },
   { id: "jogger",      ko: "트레이닝 바지",   cat: "bottom", warm: 2, en: ["track pants", "jogger sweatpants"] },
   { id: "heat_bottom", ko: "히트텍 하의",     cat: "bottom", warm: 2 },   // 바지 안 이너, 치마·원피스 밑엔 스타킹 대신
-  { id: "stockings",   ko: "스타킹",          cat: "bottom", warm: 1 },   // 치마·원피스·반바지 밑에
+  { id: "stockings",   ko: "스타킹",          cat: "bottom", warm: 1 },   // 치마·원피스 밑에만
   { id: "dress",       ko: "원피스",          cat: "dress",  warm: 2, en: ["a dress", "a one-piece dress"] },
   { id: "sneakers",    ko: "운동화",          cat: "shoes",  warm: 2, en: ["sneakers", "running shoes"] },
   { id: "sandals",     ko: "샌들·슬리퍼",     cat: "shoes",  warm: 1, en: ["sandals", "flip flops slippers"] },
@@ -133,8 +133,9 @@ export const isLegwear = (it) => LEGWEAR.includes(typeOf(it.type).id);
 // 안에만 입는 옷: 나시·히트텍·스타킹 — 혼자(상의·하의 자리) 추천하지 않고, 무늬·포인트·최근 코디 비교에서도 빼요
 export const innerOnly = (it) => (typeOf(it.type).id === "sleeveless" && R.tankInner) || isHeat(it) || isLegwear(it);   // 나시는 내 규칙에서 끌 수 있어요
 export const isHeatTop = (it) => isHeat(it);
-// 이 하의(원피스) 밑엔 스타킹을 신어요: 치마·원피스, 짧은·무릎 기장. 긴 바지면 히트텍 하의만 안에.
-export const stockingBase = (b) => typeOf(b.type).cat === "dress" || typeOf(b.type).id === "skirt" || lenOf(b) !== "long";
+// 이 하의(원피스) 밑엔 스타킹을 신어요: 치마·원피스만. 긴 바지면 히트텍 하의만 안에 (반바지·무릎 바지엔 둘 다 안 신어요).
+export const stockingBase = (b) => typeOf(b.type).cat === "dress" || typeOf(b.type).id === "skirt";
+export const legInnerBase = (b) => !stockingBase(b) && lenOf(b) === "long";
 export const canInner = (it) => !!it.virtual || ((["sleeveless", "tee_s"].includes(typeOf(it.type).id) || isHeat(it)) && !it.inner && (it.sheer || "none") === "none");
 
 // 이너 필요한 상의에서 '어떤 이너를 입을지' 고르기 (여러 개 가능, 저장 이름 innerPick)
